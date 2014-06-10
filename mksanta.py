@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# make a new BEAST  config file by inserting FASTA sequences into a generic template.
+# make a new SANTA config file by inserting FASTA sequences into a generic template.
 from __future__ import print_function
 
 from lxml import etree

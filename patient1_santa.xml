@@ -86,18 +86,6 @@ GAGGATTAG
 		
 		<samplingSchedule>
 		  <sampler>
-		    <atGeneration>200</atGeneration>	
-		    <fileName>patient1_samples.fa</fileName>
-		    <alignment>
-		      <schedule>
-			<!-- generation count -->
-			200  2
-		      </schedule>
-		      <format>FASTA</format>
-		      <label>patient1_%g_%s</label>
-		    </alignment>
-		  </sampler>
-		  <sampler>
 		    <!-- Sample 10 alignments every 100 generations. -->
 		    <atFrequency>100</atFrequency>	
 		    <fileName>patient1.fa</fileName>

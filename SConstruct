@@ -7,7 +7,7 @@ import os.path
 # http://osdir.com/ml/programming.tools.scons.user/2003-02/msg00036.html
 #
 def generate_SANTAConfig(target, source, env, for_signature):
-    print("inside generate_BuildConfig " + str(env['GENERATION']))
+    # print("inside generate_BuildConfig " + str(env['GENERATION']))
     prefix = os.path.splitext(os.path.basename(str(target[0])))[0]
 
     # randomly select COUNT sequence from generation GENERATION of source
@@ -28,8 +28,12 @@ def generate_BEASTConfig(target, source, env, for_signature):
 
 env = Environment(SANTAJAR = os.path.expanduser('~/src/matsen/tools/santa-sim/dist/santa.jar'))
 
-env.Append(BUILDERS={'SantaSim': Builder(action='java -jar $SANTAJAR $SOURCE', suffix='.fa')})
-env.Append(BUILDERS={'BuildSANTA': Builder(generator = generate_SANTAConfig)}, suffix='.xml')
-env.Append(BUILDERS={'BuildBEAST': Builder(generator = generate_BEASTConfig)}, suffix='.xml')
+
+env.Append(BUILDERS={'SantaSim': Builder(action='java -jar $SANTAJAR $SOURCE', suffix='.fa', src_suffix='.xml')})
+env.Append(BUILDERS={'BuildSANTA': Builder(generator = generate_SANTAConfig, suffix='.xml', src_suffix='.fa')})
+env.Append(BUILDERS={'BuildBEAST': Builder(generator = generate_BEASTConfig, suffix='.xml')})
+env.Append(BUILDERS={'BestTree': Builder(action='treeannotator $SOURCE >$TARGET', suffix=".trees")})
 
 SConscript('SConscript', 'env')
+
+

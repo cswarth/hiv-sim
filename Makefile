@@ -6,7 +6,7 @@
 # The next trick is the get BEAST to infer a phylogenic tree from these sequences. 
 # 
 
-TOOLS=../../tools
+TOOLS=~/src/matsen/tools
 PREFIX=hiv-pol
 
 all: patient2_best.tree
