@@ -70,7 +70,7 @@ def main(argv):
     outputfile = ''
     prefix = None
     try:
-        opts, args = getopt.getopt(argv,"h",[])
+        opts, args = getopt.getopt(argv,"h")
     except getopt.GetoptError:
         print('mkbeast.py <templatefile> <fastafile>', file=sys.stderr)
         sys.exit(2)
@@ -98,20 +98,23 @@ def main(argv):
     root = tree.getroot()
     
     # Eliminate any existing taxa elements
-    for taxa in tree.xpath("//taxa[@id]"):
-        taxa.getparent().remove(taxa)   
+    # we will replace all these.
+    for taxa in tree.xpath("/beast/taxa"):
+        taxa.getparent().remove(taxa)
+
+    # Other tags expect there to be two global taxa.
+    # we will fill these in with toxons below
     taxa_taxa = etree.Element("taxa", id='taxa')
     taxa_root = etree.Element("taxa", id='root')
 
-    # Look for the alignment tag
-    # fill it in with sequence definitions
-    alignment = tree.find("alignment")
-    alignment.clear()
-    alignment.set('id', "alignment")
-    alignment.set('dataType', "nucleotide")
+    # Eliminate any existing alignment elements
+    for alignment in tree.xpath("/beast/alignment"):
+        alignment.getparent().remove(alignment)
+    alignment = etree.Element("alignment", id='alignment', dataType="nucleotide")
 
     # eliminate any existing date elements
-    for date in tree.xpath("//date"):
+    # we will replace all these.
+    for date in tree.xpath("/beast/date"):
         date.getparent().remove(date)   
     
     # define a regex to extract the generation number from the fasta id string
@@ -193,13 +196,20 @@ def main(argv):
         parent.insert(parent.index(treemodel)+1, m)
 
     # place the date and patient taxa definitions at the start of the tree.
-    for p in reversed(patients.values()):
-        root.insert(0, p)
-    root.insert(0, taxa_root)
-    root.insert(0, taxa_taxa)
-    for d in reversed(dates):
-        root.insert(0, d)
-
+    pos = 0
+    for d in dates:
+        root.insert(pos, d)
+        pos += 1  # wish python had autoincrement
+    root.insert(pos, taxa_taxa)
+    pos += 1
+    root.insert(pos, taxa_root)
+    pos += 1
+    for p in patients.values():
+        root.insert(pos, p)
+        pos += 1
+    root.insert(pos, alignment)
+    pos += 1
+    
     # pretty-print the tree
     indent(root)
     
@@ -247,8 +257,8 @@ def newPatient(tree, patient):
     xml = ( '<booleanLikelihood id="likelihood({patient})">\n'
             '<monophylyStatistic idref="monophyly({patient})"/>\n'
             '</booleanLikelihood>\n' ).format(patient=patient)
-    prior.append(etree.Comment(etree.tostring(etree.XML(xml))))
-    #prior.append(etree.XML(xml))
+    #prior.append(etree.Comment(etree.tostring(etree.XML(xml))))
+    prior.append(etree.XML(xml))
 
 
     # Monitor the age of the specified clade

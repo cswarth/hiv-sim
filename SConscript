@@ -24,9 +24,9 @@ env.SantaSim('patient5')
 
 env.BuildBEAST('combined_145_beast', ['patient1.fa', 'patient4.fa','patient5.fa'])
 env.Beast('combined_145_beast')
-env.BestTree('combined_145', 'combined_145_beast')
+env.BestTree('combined_145')
 
 env.BuildBEAST('combined_123_beast', ['patient1.fa', 'patient2.fa','patient3.fa'])
 env.Beast('combined_123_beast')
-env.BestTree('combined_123', 'combined_123_beast')
+env.BestTree('combined_123')
 

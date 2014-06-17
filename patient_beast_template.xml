@@ -1064,7 +1064,7 @@
 	</operators>
 
 	<!-- Define MCMC                                                             -->
-	<mcmc id="mcmc" chainLength="400000" autoOptimize="true" operatorAnalysis="test.ops">
+	<mcmc id="mcmc" chainLength="8000" autoOptimize="true" operatorAnalysis="test.ops">
 		<posterior id="posterior">
 			<prior id="prior">
 				<booleanLikelihood>
@@ -1107,7 +1107,7 @@
 		</log>
 
 		<!-- write log to file                                                       -->
-		<log id="fileLog" logEvery="200" fileName="beast.log" overwrite="false">
+		<log id="fileLog" logEvery="200" fileName="_beast.log" overwrite="false">
 			<posterior idref="posterior"/>
 			<prior idref="prior"/>
 			<likelihood idref="likelihood"/>
@@ -1122,7 +1122,7 @@
 		</log>
 
 		<!-- write tree log to file                                                  -->
-		<logTree id="treeFileLog" logEvery="200" nexusFormat="true" fileName="beast.trees" sortTranslationTable="true">
+		<logTree id="treeFileLog" logEvery="200" nexusFormat="true" fileName=".trees" sortTranslationTable="true">
 			<treeModel idref="treeModel"/>
 			<trait name="rate" tag="rate">
 				<strictClockBranchRates idref="branchRates"/>
@@ -1133,7 +1133,7 @@
 		<!-- START Ancestral state reconstruction                                    -->
 
 		<!-- Ancestral state reconstruction for: patient1                            -->
-		<log id="fileLog_patient1" logEvery="10000" fileName="beast.states.log">
+		<log id="fileLog_patient1" logEvery="10000" fileName=".states.log">
 			<ancestralTrait name="root" traitName="states">
 				<treeModel idref="treeModel"/>
 				<ancestralTreeLikelihood idref="treeLikelihood"/>

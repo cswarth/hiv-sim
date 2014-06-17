@@ -29,6 +29,13 @@ def generate_BEASTCommand(target, source, env, for_signature):
     cmd = 'beast -overwrite -prefix {} -beagle {}'.format(prefix, source[0])
     return cmd
 
+def beast_targets(target, source, env):
+    prefix = os.path.splitext(os.path.basename(str(source[0])))[0]
+    prefix = prefix.replace("_beast","")
+    prefix = prefix
+    target = [ prefix+"_beast.log", prefix+".trees", prefix+".states.log"]
+    return target, source
+
 
 env = Environment(SANTAJAR = os.path.expanduser('~/src/matsen/tools/santa-sim/dist/santa.jar'))
 
@@ -37,7 +44,9 @@ env.Append(BUILDERS={'SantaSim': Builder(action='java -jar $SANTAJAR $SOURCE', s
 env.Append(BUILDERS={'BuildSANTA': Builder(generator = generate_SANTAConfig, suffix='.xml', src_suffix='.fa')})
 env.Append(BUILDERS={'BuildBEAST': Builder(generator = generate_BEASTConfig, suffix='.xml')})
 env.Append(BUILDERS={'BestTree': Builder(action='treeannotator $SOURCE >$TARGET', suffix=".mcc", src_suffix='.trees')})
-env.Append(BUILDERS={'Beast': Builder(generator = generate_BEASTCommand, suffix=".trees", src_suffix='.xml')})
+env.Append(BUILDERS={'Beast': Builder(generator = generate_BEASTCommand, 
+			      	      suffix=".trees", src_suffix='.xml',
+				      emitter = beast_targets)})
 
 SConscript('SConscript', 'env')
 
