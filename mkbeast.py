@@ -156,76 +156,8 @@ def newPatient(tree, patient):
     p = Patient(tree, patient)
     return(p)
     
-# When encountering a sequence from a patient that has not been seen
-# before,  define a monopylyetic clade for samples from this patient
-# and define some likelihood constraints.
-#
-def oldPatient(tree, patient):
-    # Monitor the monophyly of the specified clade
-    # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l17
-    #
-    # <monophylyStatistic id="monophyly(patientA)">
-    # 	<mrca>
-    # 		<taxa idref="patientA"/>
-    # 	</mrca>
-    # 	<treeModel idref="treeModel"/>
-    # </monophylyStatistic>
-    
-    xml = ( '<monophylyStatistic id="monophyly({patient})">'
-            '<mrca><taxa idref="{patient}"/></mrca>'
-            '<treeModel idref="treeModel"/>'
-            '</monophylyStatistic>' ).format(patient=patient)
-    treemodel = tree.find(".//treeModel")
-    parent = treemodel.getparent()
-    parent.insert(parent.index(treemodel)+1, etree.XML(xml))
-
-    # Enforce the monophyly of the specified clade
-    #
-    # <booleanLikelihood id="booleanLikelihood1">
-    # 	<monophylyStatistic idref="monophyly(patientF)"/>
-    # </booleanLikelihood>
-    prior = tree.find(".//mcmc/posterior/prior")
-    xml = ( '<booleanLikelihood id="likelihood({patient})">\n'
-            '<monophylyStatistic idref="monophyly({patient})"/>\n'
-            '</booleanLikelihood>\n' ).format(patient=patient)
-    #prior.append(etree.Comment(etree.tostring(etree.XML(xml))))
-    prior.append(etree.XML(xml))
-
-
-    # Monitor the age of the specified clade
-    # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l23
-    #
-    # <tmrcaStatistic id="tmrca(patientEK)">
-    # 	<mrca>
-    # 		<taxa idref="patientEK"/>
-    # 	</mrca>
-    # 	<treeModel idref="treeModel"/>
-    # </tmrcaStatistic>
-    # http://stackoverflow.com/a/7475897/1135316
-    xml = ( '<tmrcaStatistic id="tmrca({patient})">\n'
-            '<mrca><taxa idref="{patient}"/></mrca>\n'
-            '<treeModel idref="treeModel"/>\n'
-            '</tmrcaStatistic>\n' ).format(patient=patient)
-    treemodel = tree.find(".//treeModel")
-    parent = treemodel.getparent()
-    parent.insert(parent.index(treemodel)+1, etree.XML(xml))
-
-    # Constrain the starting tree so sequences from each patient are monphyletic.
-    xml = ( '<coalescentSimulator>'
-            '  <taxa idref="{id}"/>'
-            '  <constantSize idref="constant"/>'
-            '</coalescentSimulator>').format(id=patient)
-    cs = tree.find("./coalescentSimulator[@id]")
-    cs.append(etree.XML(xml))
-
-    # if we haven't seen this patient before,
-    # define a clade for all sequences sampled from this patient
-    p = etree.Element("taxa", id=patient)
-    p.text = "\n"
-    tree.getroot().append(p)
-
-    return(p)
-
+# define a patient class.  I would have preferred to make this a
+# subclass of etree._Element, but I couldn't get that to work.
 class Patient():
 
     def __init__(self, tree, patientid):
