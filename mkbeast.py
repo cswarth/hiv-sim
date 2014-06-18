@@ -102,21 +102,22 @@ def main(argv):
     for taxa in tree.xpath("/beast/taxa"):
         taxa.getparent().remove(taxa)
 
-    # Other tags expect there to be two global taxa.
-    # we will fill these in with toxons below
-    taxa_taxa = etree.Element("taxa", id='taxa')
-    taxa_root = etree.Element("taxa", id='root')
-
     # Eliminate any existing alignment elements
     for alignment in tree.xpath("/beast/alignment"):
         alignment.getparent().remove(alignment)
-    alignment = etree.Element("alignment", id='alignment', dataType="nucleotide")
 
     # eliminate any existing date elements
-    # we will replace all these.
     for date in tree.xpath("/beast/date"):
         date.getparent().remove(date)   
     
+    # eliminate existing coalescent taxa tags
+    for cs in tree.xpath("/beast/coalescentSimulator[@id]/coalescentSimulator"):
+        cs.getparent().remove(cs)   
+    
+    taxa_taxa = etree.Element("taxa", id='taxa')
+    taxa_root = etree.Element("taxa", id='root')
+    alignment = etree.Element("alignment", id='alignment', dataType="nucleotide")
+
     # define a regex to extract the generation number from the fasta id string
     # we use this to provide tip dates to BEAST.
     name_regex = re.compile("(?P<patient>^[^_]*)_(?P<generation>.*)_")
@@ -160,16 +161,10 @@ def main(argv):
                 #   TTTTTTGCAACAGGAGATATAATAGGAAATA
                 # </sequence>
 
-
                 xml = ( '<sequence>'
                         '<taxon idref="{id}"/>'
                         '{sequence}'
                         '</sequence>' ).format(id=record.id, sequence=str(record.seq))
-                # sequence = etree.Element("sequence")
-                # taxon = etree.Element("taxon", idref=record.id)
-                # taxon.tail = str(record.seq) + "\n"
-                # sequence.append(taxon)
-                # sequence.tail="\n"
                 alignment.append(etree.XML(xml))
 
 
@@ -279,6 +274,15 @@ def newPatient(tree, patient):
     parent = treemodel.getparent()
     parent.insert(parent.index(treemodel)+1, etree.XML(xml))
 
+    # Constrain the starting tree so sequences from each patient are monphyletic.
+    xml = ( '<coalescentSimulator>'
+            '  <taxa idref="{id}"/>'
+            '  <constantSize idref="constant"/>'
+            '</coalescentSimulator>').format(id=patient)
+    cs = tree.find("./coalescentSimulator[@id]")
+    cs.append(etree.XML(xml))
+
+    
     return(p)
 
 if __name__ == "__main__":
