@@ -31,21 +31,11 @@ from lxml import etree
 import re
 from Bio import SeqIO
 from collections import defaultdict
+from datetime import date
+from datetime import timedelta
 
 import sys, getopt
 
-# from http://en.wikipedia.org/wiki/Autovivification#Python
-def autovivify(levels=1, final=dict):
-    '''Returns a nested defaultdict with a set number of levels and defined final structure.
-    '''
-    return (defaultdict(final) if levels < 2 else
-            defaultdict(lambda: autovivify(levels - 1, final)))
- 
-'''usage:
-   words = autovivify(5, int)
-   words["sam"][2012][5][25]["hello"] += 1
-   words["sue"][2012][5][24]["today"] += 1
-'''
 
 # indent xml text for pretty-printing
 # assumes text within elements is not significant.
@@ -114,9 +104,10 @@ def main(argv):
     for cs in tree.xpath("/beast/coalescentSimulator[@id]/coalescentSimulator"):
         cs.getparent().remove(cs)   
     
-    taxa_taxa = etree.Element("taxa", id='taxa')
-    taxa_root = etree.Element("taxa", id='root')
-    alignment = etree.Element("alignment", id='alignment', dataType="nucleotide")
+    # insert some tags that we will populate later
+    root.insert(0, etree.Element("taxa", id='taxa'))
+    root.insert(1, etree.Element("taxa", id='root'))
+    root.insert(2, etree.Element("alignment", id='alignment', dataType="nucleotide"))
 
     # define a regex to extract the generation number from the fasta id string
     # we use this to provide tip dates to BEAST.
@@ -130,43 +121,6 @@ def main(argv):
                 match = name_regex.search(record.id)
                 patient = match.group('patient')
                 generation = match.group('generation')
-                
-                # dates in the beast config correspond to generations in the
-                # santa-sim output.
-                # we need a mapping from generation to date....
-                #
-                dateId = "date_"+patient+"_"+generation
-#                import pdb; pdb.set_trace()
-
-                if not dateId in datemap:
-                    date = datemap[dateId] = generation
-                    date = etree.Element("date", id=dateId, value=date, units="days")
-                    date.tail = "\n"
-                    dates.append(date)
-
-                # create a taxon tag, embed the date within the taxon,
-                # append to global taxa element called 'taxa'
-                # <taxon id="patient3_1000_3">
-                #   <date units="days" direction="forwards" value="1000"/>
-                # </taxon>
-
-                taxon = etree.Element("taxon", id=record.id)
-                taxon.append(etree.Element("date", idref=dateId))
-                taxa_taxa.append(taxon)
-                taxa_root.append(etree.Element("taxon", idref=record.id))
-
-                # under <alignment>, create <sequence> with refid to appropriate <taxon>
-                # <sequence>
-                #   <taxon idref="patient1200"/>
-                #   TTTTTTGCAACAGGAGATATAATAGGAAATA
-                # </sequence>
-
-                xml = ( '<sequence>'
-                        '<taxon idref="{id}"/>'
-                        '{sequence}'
-                        '</sequence>' ).format(id=record.id, sequence=str(record.seq))
-                alignment.append(etree.XML(xml))
-
 
                 # Append a taxon reference to the patient taxa
                 # <taxa id="patientFG">
@@ -176,9 +130,7 @@ def main(argv):
                     patients[patient] = newPatient(tree, patient)
 
                 p = patients[patient]
-                t = etree.Element("taxon", idref=record.id)
-                t.tail = "\n"
-                p.append(t)
+                p.addSequence(generation, str(record.seq))
 
 
     # place the tmrca and mstat tags after the treeModel tag
@@ -190,26 +142,10 @@ def main(argv):
     for m in reversed(mstat):
         parent.insert(parent.index(treemodel)+1, m)
 
-    # place the date and patient taxa definitions at the start of the tree.
-    pos = 0
-    for d in dates:
-        root.insert(pos, d)
-        pos += 1  # wish python had autoincrement
-    root.insert(pos, taxa_taxa)
-    pos += 1
-    root.insert(pos, taxa_root)
-    pos += 1
-    for p in patients.values():
-        root.insert(pos, p)
-        pos += 1
-    root.insert(pos, alignment)
-    pos += 1
-    
     # pretty-print the tree
     indent(root)
     
     print(etree.tostring(tree, pretty_print=True))
-
 
 
 # When encountering a sequence from a patient that has not been seen
@@ -217,15 +153,15 @@ def main(argv):
 # and define some likelihood constraints.
 #
 def newPatient(tree, patient):
-    root = tree.getroot()
-
-    # if we haven't seen this patient before,
-    # define a clade for all sequences sampled from this patient
-    p = etree.Element("taxa", id=patient)
-    p.text = "\n"
-    root.append(p)
-
-    # Monitore the monophyly of the specified clade
+    p = Patient(tree, patient)
+    return(p)
+    
+# When encountering a sequence from a patient that has not been seen
+# before,  define a monopylyetic clade for samples from this patient
+# and define some likelihood constraints.
+#
+def oldPatient(tree, patient):
+    # Monitor the monophyly of the specified clade
     # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l17
     #
     # <monophylyStatistic id="monophyly(patientA)">
@@ -282,9 +218,113 @@ def newPatient(tree, patient):
     cs = tree.find("./coalescentSimulator[@id]")
     cs.append(etree.XML(xml))
 
-    
+    # if we haven't seen this patient before,
+    # define a clade for all sequences sampled from this patient
+    p = etree.Element("taxa", id=patient)
+    p.text = "\n"
+    tree.getroot().append(p)
+
     return(p)
 
+class Patient():
+
+    def __init__(self, tree, patientid):
+        self._id = patientid
+        self._tree = tree
+        self._sindex = 1
+        self._sampledate = date(2014,6, 13)
+
+        self.monophyly()
+        self.tmrca()
+        patientTaxa = etree.Element("taxa", id=patientid)
+
+        # insert patient taxa right before <alignment>
+        a = tree.find("./alignment[@id='alignment']")
+        self._tree.getroot().insert(a.getparent().index(a), patientTaxa)
+
+
+    def monophyly(self):
+        # Monitor the monophyly of the specified clade
+        # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l17
+        # http://stackoverflow.com/a/7475897/1135316
+        xml = ( '<monophylyStatistic id="monophyly({patient})">'
+                '<mrca><taxa idref="{patient}"/></mrca>'
+                '<treeModel idref="treeModel"/>'
+                '</monophylyStatistic>' ).format(patient=self._id)
+        treemodel = self._tree.find(".//treeModel")
+        parent = treemodel.getparent()
+        parent.insert(parent.index(treemodel)+1, etree.XML(xml))
+
+        # Enforce the monophyly of the specified patient taxa
+        prior = self._tree.find(".//mcmc/posterior/prior")
+        xml = ( '<booleanLikelihood id="likelihood({patient})">\n'
+                '<monophylyStatistic idref="monophyly({patient})"/>\n'
+                '</booleanLikelihood>\n' ).format(patient=self._id)
+        #prior.append(etree.Comment(etree.tostring(etree.XML(xml))))
+        prior.append(etree.XML(xml))
+
+        # Constrain the starting tree to make each patient monophyletic.
+        xml = ( '<coalescentSimulator>'
+                '  <taxa idref="{id}"/>'
+                '  <constantSize idref="constant"/>'
+                '</coalescentSimulator>').format(id=self._id)
+        cs = self._tree.find("./coalescentSimulator[@id]")
+        cs.append(etree.XML(xml))
+
+    def tmrca(self):
+        # Monitor the age of the specified clade
+        # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l23
+        # http://stackoverflow.com/a/7475897/1135316
+        xml = ( '<tmrcaStatistic id="tmrca({patient})">\n'
+                '<mrca><taxa idref="{patient}"/></mrca>\n'
+                '<treeModel idref="treeModel"/>\n'
+                '</tmrcaStatistic>\n' ).format(patient=self._id)
+        treemodel = self._tree.find(".//treeModel")
+        parent = treemodel.getparent()
+        parent.insert(parent.index(treemodel)+1, etree.XML(xml))
+
+    def addSequence(self, generation, sequence):
+
+        sequenceId = self._id+"_"+generation+"_"+str(self._sindex)
+        dateId = "date_"+self._id+"_"+generation
+        self._sindex += 1
+
+        # add a sample date if we don't already have one.
+        sampleDate = "./date[@id='{}']".format(dateId)
+        if self._tree.find(sampleDate) is None:
+            # dates in the beast config correspond to generations in the
+            # santa-sim output.
+            # we need a mapping from generation to date....
+            #
+            date = self._sampledate + timedelta(int(generation))
+            date = etree.Element("date", id=dateId, value=date.strftime('%d/%m/%Y'), units="days")
+            self._tree.getroot().insert(0, date)
+
+
+        # create a taxon tag, embed the date within the taxon,
+        # append to global taxa element called 'taxa'
+        xml = ( '<taxon id="{}">'
+                '  <date idref="{}"/>'
+                '</taxon>' ).format(sequenceId, dateId)
+        self._tree.find("./taxa[@id='taxa']").append(etree.XML(xml))
+        self._tree.find("./taxa[@id='root']").append(etree.Element("taxon", idref=sequenceId))
+
+        # append a taxon to the per-patient taxa
+        patientTaxa = "./taxa[@id='{}']".format(self._id)
+        self._tree.find(patientTaxa).append(etree.Element("taxon", idref=sequenceId))
+
+        # Create a <sequence> with refid to appropriate <taxon>
+        #
+        xml = ( '<sequence>'
+                '  <taxon idref="{id}"/>'
+                '  {sequence}'
+                '</sequence>' ).format(id=sequenceId, sequence=str(sequence))
+        self._tree.find("./alignment").append(etree.XML(xml))
+
+
+
+
+    
 if __name__ == "__main__":
    main(sys.argv[1:])
    

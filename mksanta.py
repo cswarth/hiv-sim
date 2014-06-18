@@ -28,7 +28,8 @@ def main(argv):
     templatefile = args[0]
     datafile = args[1]
 
-    # Parse a generic template and insert sequences from a FASTA file into the middle, separated by the appropriate XML tags.
+    # Parse a generic template and insert sequences from a FASTA file
+    # into the middle, separated by the appropriate XML tags.
 
     tree = etree.parse(templatefile)
 
