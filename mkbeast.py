@@ -165,15 +165,27 @@ class Patient():
         self._tree = tree
         self._sindex = 1
 
-        self.monophyly()
-        self.tmrca()
-        patientTaxa = etree.Element("taxa", id=patientid)
+        patientTaxa = etree.Element("taxa", id=self._id)
 
         # insert patient taxa right before <alignment>
         a = tree.find("./alignment[@id='alignment']")
         self._tree.getroot().insert(a.getparent().index(a), patientTaxa)
+        self.monophyly()
+        self.tmrca()
+        self.ancestralTrait()
 
 
+    def ancestralTrait(self):
+        # Log the inferred ancestral sequence of this patient.
+        # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l17
+        # http://stackoverflow.com/a/7475897/1135316
+        xml = ( '<ancestralTrait name="{patient}"  traitName="states">'
+                '<treeModel idref="treeModel"/>'
+				'<ancestralTreeLikelihood idref="treeLikelihood"/>'
+                '</ancestralTrait>' ).format(patient=self._id)
+        node = self._tree.find(".//ancestralTrait[@traitName='states']")
+        node.getparent().append(etree.XML(xml))
+        
     def monophyly(self):
         # Monitor the monophyly of the specified clade
         # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l17
