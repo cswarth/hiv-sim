@@ -31,8 +31,7 @@ from lxml import etree
 import re
 from Bio import SeqIO
 from collections import defaultdict
-from datetime import date
-from datetime import timedelta
+from datetime import datetime, date, timedelta
 
 import sys, getopt
 
@@ -58,37 +57,37 @@ def indent(elem, level=0):
 def main(argv):
     inputfile = ''
     outputfile = ''
+    startDate = datetime.strptime("6/13/2014", "%m/%d/%Y")
     prefix = None
     try:
-        opts, args = getopt.getopt(argv,"h")
+        opts, args = getopt.getopt(argv,"hd:")
     except getopt.GetoptError:
         print('mkbeast.py <templatefile> <fastafile>', file=sys.stderr)
         sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('usage: mkbeast.py [-p <prefix>] <templatefile> <fastafile>', file=sys.stderr)
+            print('usage: mkbeast.py [-p <prefix>] <templatefile> <fastafile> [<fastafile> ...]', file=sys.stderr)
             sys.exit()
-        
+        elif opt == '-d':
+            startDate = date.strptime(arg, "%m/%d/%Y")
 
     templatefile = args[0]
     datafiles = args[1:]
 
-    # datemap stores string dates assigned to {patients, generation} combinations.
-    # patients stores xml element corresponding to a patient taxa.
+    # patients dict stores instance of class Patient keyed by patient
+    # id string.  we create a new one when we run into a patient id
+    # string that we haven't seem before.  patient id string is
+    # derived from the first part of the name on an alignment,
+    # e.g. 'patient1_100_1' yields patient id 'patient1'
     #
-    datemap = defaultdict()
     patients = defaultdict()
-    dates = []		# list of date elements
-    mstat = []		# list of monophylyStatistic elements
-    tmrca = []		# list of tmrcaStatistic elements
 
-    # Parse a generic template and insert sequences from a FASTA file into the middle, separated by the appropriate XML tags.
+    # Parse a generic template and insert sequences from a FASTA file into the middle,
+    # separated by the appropriate XML tags.
 
     tree = etree.parse(templatefile)
-    root = tree.getroot()
     
     # Eliminate any existing taxa elements
-    # we will replace all these.
     for taxa in tree.xpath("/beast/taxa"):
         taxa.getparent().remove(taxa)
 
@@ -104,7 +103,8 @@ def main(argv):
     for cs in tree.xpath("/beast/coalescentSimulator[@id]/coalescentSimulator"):
         cs.getparent().remove(cs)   
     
-    # insert some tags that we will populate later
+    # insert some tags right at the top of the XML tree.   The tags will be populated later.
+    root = tree.getroot()
     root.insert(0, etree.Element("taxa", id='taxa'))
     root.insert(1, etree.Element("taxa", id='root'))
     root.insert(2, etree.Element("alignment", id='alignment', dataType="nucleotide"))
@@ -117,30 +117,30 @@ def main(argv):
     for datafile in datafiles:
         with open(datafile, "rU") as handle:
             for record in SeqIO.parse(handle, "fasta") :
+                # split the tag into fields separated by whitespace
+                fields = record.id.split('|')
                 # extract the patient id and generation from the fasta name.
-                match = name_regex.search(record.id)
+                match = name_regex.search(fields[0])
                 patient = match.group('patient')
                 generation = match.group('generation')
 
-                # Append a taxon reference to the patient taxa
-                # <taxa id="patientFG">
-                #   <taxon idref="F02cl15"/>
-                # </taxa>
+                # Create a patient instance if we haven't seen this patient id before
                 if patient not in patients:
                     patients[patient] = newPatient(tree, patient)
-
                 p = patients[patient]
-                p.addSequence(generation, str(record.seq))
 
+                # >patient3_100_2|patient2.fa|400|600
+                #  <sequence identifier>|<parent file>|<parent generati>|<cumulative generation>
+                # the date of this sequence is calculated as,
+                # 	 cumulative date of parent
+                #  + sampled generation from current patient.
+                #
 
-    # place the tmrca and mstat tags after the treeModel tag
-    # http://stackoverflow.com/a/7475897/1135316
-    treemodel = tree.find(".//treeModel")
-    parent = treemodel.getparent()
-    for m in reversed(tmrca):
-        parent.insert(parent.index(treemodel)+1, m)
-    for m in reversed(mstat):
-        parent.insert(parent.index(treemodel)+1, m)
+                sampleDate = startDate
+                sampleDate += timedelta(int(fields[3]))
+                sampleDate += timedelta(int(generation))
+                p.addSequence(generation, str(record.seq), sampleDate)
+
 
     # pretty-print the tree
     indent(root)
@@ -164,7 +164,6 @@ class Patient():
         self._id = patientid
         self._tree = tree
         self._sindex = 1
-        self._sampledate = date(2014,6, 13)
 
         self.monophyly()
         self.tmrca()
@@ -205,7 +204,7 @@ class Patient():
 
     def tmrca(self):
         # Monitor the age of the specified clade
-        # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l23
+        # http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l23
         # http://stackoverflow.com/a/7475897/1135316
         xml = ( '<tmrcaStatistic id="tmrca({patient})">\n'
                 '<mrca><taxa idref="{patient}"/></mrca>\n'
@@ -215,21 +214,28 @@ class Patient():
         parent = treemodel.getparent()
         parent.insert(parent.index(treemodel)+1, etree.XML(xml))
 
-    def addSequence(self, generation, sequence):
-
+    def addSequence(self, generation, sequence, sampleDate):
+        '''
+        the tag has format
+        >patient2_100_1 patient1 200 6/13/1995
+        '''
         sequenceId = self._id+"_"+generation+"_"+str(self._sindex)
         dateId = "date_"+self._id+"_"+generation
         self._sindex += 1
 
         # add a sample date if we don't already have one.
-        sampleDate = "./date[@id='{}']".format(dateId)
-        if self._tree.find(sampleDate) is None:
+        if self._tree.find("./date[@id='{}']".format(dateId)) is None:
             # dates in the beast config correspond to generations in the
             # santa-sim output.
-            # we need a mapping from generation to date....
+
+            # split the tag into fields separated by whitespace
+            # patient2_100_1 patient1 200 6/13/1995
+            # the date of this sequence is calculated as,
+            # 	 starting date of parent
+            #  + sampled generation from parent
+            #  + sampled generation from current patient.
             #
-            date = self._sampledate + timedelta(int(generation))
-            date = etree.Element("date", id=dateId, value=date.strftime('%d/%m/%Y'), units="days")
+            date = etree.Element("date", id=dateId, value=sampleDate.strftime('%d/%m/%Y'), units="days")
             self._tree.getroot().insert(0, date)
 
 

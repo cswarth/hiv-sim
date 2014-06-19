@@ -92,7 +92,7 @@ GAGGATTAG
 		    <alignment>
 		      <sampleSize>10</sampleSize>
 		      <format>FASTA</format>
-		      <label>patient1_%g_%s</label>
+		      <label>patient1_%g_%s|HIV_POL|0|0</label>
 		    </alignment>
 		  </sampler>
 		</samplingSchedule>
