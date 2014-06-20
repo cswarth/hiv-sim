@@ -105,8 +105,6 @@ def main(argv):
     
     # insert some tags right at the top of the XML tree.   The tags will be populated later.
     root = tree.getroot()
-    root.insert(0, etree.Element("taxa", id='taxa'))
-    root.insert(1, etree.Element("taxa", id='root'))
     root.insert(2, etree.Element("alignment", id='alignment', dataType="nucleotide"))
 
     # define a regex to extract the generation number from the fasta id string
@@ -126,13 +124,13 @@ def main(argv):
 
                 # Create a patient instance if we haven't seen this patient id before
                 if patient not in patients:
-                    patients[patient] = newPatient(tree, patient)
+                    patients[patient] = Patient(tree, patient)
                 p = patients[patient]
 
                 # >patient3_100_2|patient2.fa|400|600
-                #  <sequence identifier>|<parent file>|<parent generati>|<cumulative generation>
+                #  <sequence identifier>|<parent file>|<parent generation>|<cumulative generation>
                 # the date of this sequence is calculated as,
-                # 	 cumulative date of parent
+                # 	 cumulative generation of parent
                 #  + sampled generation from current patient.
                 #
 
@@ -148,65 +146,95 @@ def main(argv):
     print(etree.tostring(tree, pretty_print=True))
 
 
-# When encountering a sequence from a patient that has not been seen
-# before,  define a monopylyetic clade for samples from this patient
-# and define some likelihood constraints.
-#
-def newPatient(tree, patient):
-    p = Patient(tree, patient)
-    return(p)
-    
-# define a patient class.  I would have preferred to make this a
-# subclass of etree._Element, but I couldn't get that to work.
-class Patient():
 
-    def __init__(self, tree, patientid):
-        self._id = patientid
+
+class BeastTaxa(object):		# new style class inherits from object
+    							# which means subclasses can use super()
+                                # https://docs.python.org/2/library/functions.html#super
+    '''
+        Define a class to hold data and methods associated with taxa definitions in
+        BEAST config files.
+
+        We usually define two or three kinds of taxa in BEAST config files:
+
+        	global taxa like 'taxa' and 'root',
+            per-patient taxa like 'patient1', 
+            per-patient,per-generation taxa like 'patient1_200'
+
+        This class is a general BEAST taxa class.  Given a taxa ID it knows
+        how to define a taxa, and how to add a taxon reference to the taxa.
+        A coupld of helper functions to defining and enforcing various constraints
+        on taxa are also packages in this class. 
+        This class does NOT know how to define a single taxon - that is done elsewhere.
+    '''
+
+    def __init__(self, tree, id, position=None):
         self._tree = tree
-        self._sindex = 1
+        self._id = id
 
-        patientTaxa = etree.Element("taxa", id=self._id)
+        # insert taxa after all existing taxa definitions, or at start of tree if no taxa exist.
+        if position is None:
+            position = 0
+            e = tree.find("./taxa[last()]")
+            if e is not None:
+                position = e.getparent().index(e)
+                position += 1
+        taxa = etree.Element("taxa", id=self._id)
+        self._tree.getroot().insert(position, taxa)
 
-        # insert patient taxa right before <alignment>
-        a = tree.find("./alignment[@id='alignment']")
-        self._tree.getroot().insert(a.getparent().index(a), patientTaxa)
-        self.monophyly()
-        self.tmrca()
-        self.ancestralTrait()
+    def addDate(self, dateId, sampleDate, position=None):
+        # dates in the beast config correspond to generations in the
+        # santa-sim output.
+
+        if position is None:
+            position = 0
+            e = self._tree.find("./date[last()]")
+            if e is not None:
+                position = e.getparent().index(e)
+                position += 1
+        date = etree.Element("date", id=dateId, value=sampleDate.strftime('%d/%m/%Y'), units="days")
+        self._tree.getroot().insert(position, date)
 
 
-    def ancestralTrait(self):
-        # Log the inferred ancestral sequence of this patient.
-        # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l17
-        # http://stackoverflow.com/a/7475897/1135316
-        xml = ( '<ancestralTrait name="{patient}"  traitName="states">'
-                '<treeModel idref="treeModel"/>'
-				'<ancestralTreeLikelihood idref="treeLikelihood"/>'
-                '</ancestralTrait>' ).format(patient=self._id)
-        node = self._tree.find(".//ancestralTrait[@traitName='states']")
-        node.getparent().append(etree.XML(xml))
-        
+    def addTaxon(self, taxonId, dateId=None):
+        # create a taxon tag, embed the date within the taxon,
+        if dateId is None:
+            xml = ( '<taxon id="{}"/>' ).format(taxonId)
+        else:
+            xml = ( '<taxon id="{}">'
+                    '  <date idref="{}"/>'
+                    '</taxon>' ).format(taxonId, dateId)
+        xpath = "./taxa[@id='{}']".format(self._id)
+        self._tree.find(xpath).append(etree.XML(xml))
+
+    def addTaxonRef(self, taxonId):
+        '''
+        Append a taxon reference to the per-patient-generation taxa
+        '''
+        xpath = "./taxa[@id='{}']".format(self._id)
+        self._tree.find(xpath).append(etree.Element("taxon", idref=taxonId))
+
     def monophyly(self):
-        # Monitor the monophyly of the specified clade
+        # Monitor the monophyly of the specified taxa
         # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l17
         # http://stackoverflow.com/a/7475897/1135316
-        xml = ( '<monophylyStatistic id="monophyly({patient})">'
+        xml = ( '<monophylyStatistic id="monophyly({})">'
                 '<mrca><taxa idref="{patient}"/></mrca>'
                 '<treeModel idref="treeModel"/>'
-                '</monophylyStatistic>' ).format(patient=self._id)
+                '</monophylyStatistic>' ).format(self._id)
         treemodel = self._tree.find(".//treeModel")
         parent = treemodel.getparent()
         parent.insert(parent.index(treemodel)+1, etree.XML(xml))
 
         # Enforce the monophyly of the specified patient taxa
         prior = self._tree.find(".//mcmc/posterior/prior")
-        xml = ( '<booleanLikelihood id="likelihood({patient})">\n'
-                '<monophylyStatistic idref="monophyly({patient})"/>\n'
-                '</booleanLikelihood>\n' ).format(patient=self._id)
+        xml = ( '<booleanLikelihood id="likelihood({id})">\n'
+                '<monophylyStatistic idref="monophyly({id})"/>\n'
+                '</booleanLikelihood>\n' ).format(id=self._id)
         #prior.append(etree.Comment(etree.tostring(etree.XML(xml))))
         prior.append(etree.XML(xml))
 
-        # Constrain the starting tree to make each patient monophyletic.
+        # Constrain the starting tree to make this taxa monophyletic.
         xml = ( '<coalescentSimulator>'
                 '  <taxa idref="{id}"/>'
                 '  <constantSize idref="constant"/>'
@@ -226,49 +254,88 @@ class Patient():
         parent = treemodel.getparent()
         parent.insert(parent.index(treemodel)+1, etree.XML(xml))
 
+
+
+class Generation(BeastTaxa):
+    _classInit = False
+    _taxaTaxa = None
+    _rootTaxa = None
+
+    def __init__(self, tree, generationId, sampleDate):
+        super(Generation, self).__init__(tree, generationId)
+        self._sindex = 1		# unique index per taxon 
+
+        if not Generation._classInit:
+            Generation._taxaTaxa = BeastTaxa(self._tree, 'taxa', 0)
+            Generation._rootTaxa = BeastTaxa(self._tree, 'root', 1)
+            Generation._classInit = True
+
+        # each generation per patient has a unique date.
+        dateId = "date_"+self._id
+        self.addDate(dateId, sampleDate)
+
+        
+    def addTaxon(self):
+        '''
+        the tag has format
+        >patient2_100_1 patient1 200 6/13/1995
+        '''
+        dateId = "date_"+self._id
+        taxonId = self._id+"_"+str(self._sindex)
+        self._sindex += 1
+
+        Generation._taxaTaxa.addTaxon(taxonId, dateId)
+        Generation._rootTaxa.addTaxonRef(taxonId)
+
+        super(Generation,self).addTaxonRef(taxonId)
+        return(taxonId)
+
+
+# define a patient class.  I would have preferred to make this a
+# subclass of etree._Element, but I couldn't get that to work.
+class Patient(BeastTaxa):
+    def __init__(self, tree, patientid):
+        super(Patient, self).__init__(tree, patientid)
+
+        self._generations = defaultdict()
+        
+        self.tmrca()
+        self.ancestralTrait()
+
+
+    def ancestralTrait(self):
+        # Log the inferred ancestral sequence of this patient.
+        # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l17
+        # http://stackoverflow.com/a/7475897/1135316
+        xml = ( '<ancestralTrait name="{patient}"  traitName="states">'
+                '<treeModel idref="treeModel"/>'
+				'<ancestralTreeLikelihood idref="treeLikelihood"/>'
+                '</ancestralTrait>' ).format(patient=self._id)
+        node = self._tree.find(".//ancestralTrait[@traitName='states']")
+        node.getparent().append(etree.XML(xml))
+        
+
     def addSequence(self, generation, sequence, sampleDate):
         '''
         the tag has format
         >patient2_100_1 patient1 200 6/13/1995
         '''
-        sequenceId = self._id+"_"+generation+"_"+str(self._sindex)
-        dateId = "date_"+self._id+"_"+generation
-        self._sindex += 1
+        generationId = self._id+"_"+generation
+        # Create a generation instance if we haven't seen this generation id before
+        if generationId not in self._generations:
+            self._generations[generationId] = Generation(self._tree, generationId, sampleDate)
+        g = self._generations[generationId]
 
-        # add a sample date if we don't already have one.
-        if self._tree.find("./date[@id='{}']".format(dateId)) is None:
-            # dates in the beast config correspond to generations in the
-            # santa-sim output.
-
-            # split the tag into fields separated by whitespace
-            # patient2_100_1 patient1 200 6/13/1995
-            # the date of this sequence is calculated as,
-            # 	 starting date of parent
-            #  + sampled generation from parent
-            #  + sampled generation from current patient.
-            #
-            date = etree.Element("date", id=dateId, value=sampleDate.strftime('%d/%m/%Y'), units="days")
-            self._tree.getroot().insert(0, date)
-
-
-        # create a taxon tag, embed the date within the taxon,
-        # append to global taxa element called 'taxa'
-        xml = ( '<taxon id="{}">'
-                '  <date idref="{}"/>'
-                '</taxon>' ).format(sequenceId, dateId)
-        self._tree.find("./taxa[@id='taxa']").append(etree.XML(xml))
-        self._tree.find("./taxa[@id='root']").append(etree.Element("taxon", idref=sequenceId))
-
-        # append a taxon to the per-patient taxa
-        patientTaxa = "./taxa[@id='{}']".format(self._id)
-        self._tree.find(patientTaxa).append(etree.Element("taxon", idref=sequenceId))
+        taxonId = g.addTaxon()
+        self.addTaxonRef(taxonId)
+        
 
         # Create a <sequence> with refid to appropriate <taxon>
         #
         xml = ( '<sequence>'
                 '  <taxon idref="{id}"/>'
                 '  {sequence}'
-                '</sequence>' ).format(id=sequenceId, sequence=str(sequence))
+                '</sequence>' ).format(id=taxonId, sequence=str(sequence))
         self._tree.find("./alignment").append(etree.XML(xml))
 
 
