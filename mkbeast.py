@@ -218,10 +218,10 @@ class BeastTaxa(object):		# new style class inherits from object
         # Monitor the monophyly of the specified taxa
         # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l17
         # http://stackoverflow.com/a/7475897/1135316
-        xml = ( '<monophylyStatistic id="monophyly({})">'
-                '<mrca><taxa idref="{patient}"/></mrca>'
+        xml = ( '<monophylyStatistic id="monophyly({id})">'
+                '<mrca><taxa idref="{id}"/></mrca>'
                 '<treeModel idref="treeModel"/>'
-                '</monophylyStatistic>' ).format(self._id)
+                '</monophylyStatistic>' ).format(id=self._id)
         treemodel = self._tree.find(".//treeModel")
         parent = treemodel.getparent()
         parent.insert(parent.index(treemodel)+1, etree.XML(xml))
@@ -255,6 +255,21 @@ class BeastTaxa(object):		# new style class inherits from object
         parent.insert(parent.index(treemodel)+1, etree.XML(xml))
 
 
+    def ancestralTrait(self):
+        '''
+        Log the ancestral sequences for this taxa.
+        '''
+        # Log the inferred ancestral sequence of this patient.
+        # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l17
+        # http://stackoverflow.com/a/7475897/1135316
+        xml = ( '<ancestralTrait name="{patient}"  traitName="states">'
+                '<treeModel idref="treeModel"/>'
+				'<ancestralTreeLikelihood idref="treeLikelihood"/>'
+                '</ancestralTrait>' ).format(patient=self._id)
+        node = self._tree.find(".//ancestralTrait[@traitName='states']")
+        node.getparent().append(etree.XML(xml))
+        
+
 
 class Generation(BeastTaxa):
     _classInit = False
@@ -271,8 +286,11 @@ class Generation(BeastTaxa):
             Generation._classInit = True
 
         # each generation per patient has a unique date.
-        dateId = "date_"+self._id
+        dateId = "date("+self._id+")"
         self.addDate(dateId, sampleDate)
+
+        self.tmrca()
+        self.monophyly()   # declatre each generation to be monophyletic
 
         
     def addTaxon(self):
@@ -280,7 +298,7 @@ class Generation(BeastTaxa):
         the tag has format
         >patient2_100_1 patient1 200 6/13/1995
         '''
-        dateId = "date_"+self._id
+        dateId = "date("+self._id+")"
         taxonId = self._id+"_"+str(self._sindex)
         self._sindex += 1
 
@@ -299,21 +317,8 @@ class Patient(BeastTaxa):
 
         self._generations = defaultdict()
         
-        self.tmrca()
         self.ancestralTrait()
 
-
-    def ancestralTrait(self):
-        # Log the inferred ancestral sequence of this patient.
-        # see http://bodegaphylo.wikispot.org/3._Editing_XML_Input_File#l17
-        # http://stackoverflow.com/a/7475897/1135316
-        xml = ( '<ancestralTrait name="{patient}"  traitName="states">'
-                '<treeModel idref="treeModel"/>'
-				'<ancestralTreeLikelihood idref="treeLikelihood"/>'
-                '</ancestralTrait>' ).format(patient=self._id)
-        node = self._tree.find(".//ancestralTrait[@traitName='states']")
-        node.getparent().append(etree.XML(xml))
-        
 
     def addSequence(self, generation, sequence, sampleDate):
         '''
