@@ -60,17 +60,19 @@ def main(argv):
     startDate = datetime.strptime("6/13/2014", "%m/%d/%Y")
     prefix = None
     try:
-        opts, args = getopt.getopt(argv,"hd:")
+        opts, args = getopt.getopt(argv,"hd:g:")
     except getopt.GetoptError:
         print('mkbeast.py <templatefile> <fastafile>', file=sys.stderr)
         sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('usage: mkbeast.py [-p <prefix>] <templatefile> <fastafile> [<fastafile> ...]', file=sys.stderr)
+            print('usage: mkbeast.py [-p <prefix>] <templatefile>  [-g <generations>] <fastafile>  [<fastafile>  ...]', file=sys.stderr)
             sys.exit()
         elif opt == '-d':
             startDate = date.strptime(arg, "%m/%d/%Y")
-
+        elif opt == '-g':
+            generations = [int(x) for x in arg.split(",")]
+            
     templatefile = args[0]
     datafiles = args[1:]
 
@@ -86,24 +88,17 @@ def main(argv):
     # separated by the appropriate XML tags.
 
     tree = etree.parse(templatefile)
-    
-    # Eliminate any existing taxa elements
-    for taxa in tree.xpath("/beast/taxa"):
-        taxa.getparent().remove(taxa)
 
-    # Eliminate any existing alignment elements
-    for alignment in tree.xpath("/beast/alignment"):
-        alignment.getparent().remove(alignment)
+    # Eliminate some elements from that tree; we will replace these without own.
 
-    # eliminate any existing date elements
-    for date in tree.xpath("/beast/date"):
-        date.getparent().remove(date)   
-    
-    # eliminate existing coalescent taxa tags
-    for cs in tree.xpath("/beast/coalescentSimulator[@id]/coalescentSimulator"):
-        cs.getparent().remove(cs)   
-    
-    # insert some tags right at the top of the XML tree.   The tags will be populated later.
+    for xspec in [  "/beast/taxa",
+                    "/beast/alignment",
+                    "/beast/date",
+                    "/beast/coalescentSimulator[@id]/coalescentSimulator" ]:
+        for e in tree.xpath(xspec):
+            e.getparent().remove(e)
+        
+    # insert some tags right at the top of the XML tree.   These tags will be populated later.
     root = tree.getroot()
     root.insert(2, etree.Element("alignment", id='alignment', dataType="nucleotide"))
 
@@ -114,14 +109,22 @@ def main(argv):
     # for each fasta sequence in the data file, create a taxon node and a sequence node.
     for datafile in datafiles:
         with open(datafile, "rU") as handle:
+            
+            # for each fasta sequence in the data file, create a taxon node and a sequence node.
+
             for record in SeqIO.parse(handle, "fasta") :
-                # split the tag into fields separated by whitespace
-                fields = record.id.split('|')
                 # extract the patient id and generation from the fasta name.
+                fields = record.id.split('|')
                 match = name_regex.search(fields[0])
                 patient = match.group('patient')
                 generation = match.group('generation')
 
+                # If the user specified generations, and the current generation is not in the list,
+                #     skip to the next entry.
+
+                if generations is not None and int(generation) not in generations:
+                    continue
+                    
                 # Create a patient instance if we haven't seen this patient id before
                 if patient not in patients:
                     patients[patient] = Patient(tree, patient)
@@ -140,6 +143,14 @@ def main(argv):
                 p.addSequence(generation, str(record.seq), sampleDate)
 
 
+        for xspec in [  "/beast/taxa",
+                        "/beast/alignment",
+                        "/beast/date",
+                        "/beast/coalescentSimulator[@id]/coalescentSimulator" ]:
+            if not tree.xpath(xspec) :
+                print("Tree is missing critical tags - {}". format(xspec), file=sys.stderr)
+                sys.exit(2)
+            
     # pretty-print the tree
     indent(root)
     
@@ -192,7 +203,7 @@ class BeastTaxa(object):		# new style class inherits from object
             if e is not None:
                 position = e.getparent().index(e)
                 position += 1
-        date = etree.Element("date", id=dateId, value=sampleDate.strftime('%d/%m/%Y'), units="days")
+        date = etree.Element("date", id=dateId, value=sampleDate.strftime('%d/%m/%Y'), units="years")
         self._tree.getroot().insert(position, date)
 
 
