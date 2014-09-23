@@ -50,7 +50,7 @@ env['SANTAJAR']= os.path.expanduser('~matsengrp/local/lib/santa.jar')
 ### We're going to simulate a call to 'source venv/bin/activate' by adding
 ### 'venv/bin' to the head of the path.
 # if you don't have a virtual environment yet, you can build it with 'make venv'
-env['venv'] = './venv'
+env['venv'] = '../venv'
 env.PrependENVPath('PATH', os.path.join(env['venv'], 'bin'))
 
 # build the HIV evolutionary history from which we will sample

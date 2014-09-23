@@ -3,6 +3,10 @@
 Classify mutations for read groups in a BAM file,
 using mutations identified by a GFF3 file
 """
+import pkg_resources
+# Require scipy version > 0.12.0 in order to use logsumexp with a second argument.
+# http://docs.scipy.org/doc/scipy/reference/generated/logsumexp.html
+pkg_resources.require("scipy>=0.12.0")
 
 import contextlib
 import argparse
@@ -11,7 +15,8 @@ import logging
 from Bio import SeqIO
 from itertools import izip   # for python3, just use built-in zip
 import numpy as np
-import scipy.misc as sp
+
+from scipy.misc import logsumexp
 
 import math
 import sys
@@ -42,7 +47,7 @@ def test():
     a = [math.log(m) for m in a]
     print(a)
     b = [10.0, 10.0, 10.0]
-    n = sp.logsumexp(a, b=b)
+    n = logsumexp(a, b=b)
     print(type(n))
     print("{}  {}".format(str(n), math.exp(n)))
     
@@ -53,7 +58,7 @@ def test2():
     print(b)
     a = [0.5, 0.005]
     a = [np.log(n) for n in a]
-    n = sp.logsumexp(a, b=b)
+    n = logsumexp(a, b=b)
     print(type(n))
     print("{}  {}".format(str(n), math.exp(n)))
 
@@ -62,10 +67,14 @@ def test2():
 def log_normalize(x):
     max_val = np.max(x);
     x = x - max_val
-    s = sp.logsumexp(x)
+    s = logsumexp(x)
     x = x - s
     return(x)
-    
+
+# convert version string to tuples that can be compared
+def versiontuple(v):
+    return tuple(map(int, (v.split("."))))
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('founder', metavar="founder.fasta", type=argparse.FileType('r'))
@@ -94,10 +103,9 @@ def main():
         post = np.asarray([ post[1] for post in parse_log(postfp)], dtype=np.float64)
 
     
-    #  http://docs.scipy.org/doc/scipy/reference/generated/scipy.misc.logsumexp.html
     post = log_normalize(post)
     dist = changes/len(seq[1])
-    wdist = sp.logsumexp(post, b=dist)
+    wdist = logsumexp(post, b=dist)
 
     '''
     min = minumim number of mismatched between sequence and founder
