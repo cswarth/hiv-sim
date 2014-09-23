@@ -1,0 +1,10 @@
+Cython==0.21
+argparse==1.2.1
+biopython==1.64
+distribute==0.7.3
+nestly==0.6-dev
+numpy==1.9.0
+pysam==0.8.0
+scipy==0.14.0
+scons==2.3.3
+wsgiref==0.1.2

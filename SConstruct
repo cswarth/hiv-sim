@@ -9,16 +9,16 @@ import os.path
 def generate_SANTAConfig(target, source, env, for_signature):
     prefix = os.path.splitext(os.path.basename(str(target[0])))[0]
 
-    # # randomly select COUNT sequence from generation GENERATION of source
-    # cmd = 'sed \'/^\(>.*\)$/N;s/\\n/:/g\' %s | grep \'_%s_\' | shuf -n %d | sed \'s/:/\\n/g\' >sample.fa\n' % (source[0], env['GENERATION'], env['COUNT'])
-
     # create a new santa config file using the sampled sequences
     cmd = './mksanta.py -p {} patient_santa_template.xml {} {} {} > {}'.format(prefix, source[0], env['GENERATION'], env['COUNT'], target[0])
     return cmd
 
 def generate_BEASTConfig(target, source, env, for_signature):
     sources = " ".join([str(s) for s in source])
-    cmd = './mkbeast.py patient_beast_template.xml %s >%s' % (sources, target[0])
+    if 'GENERATIONS' in env:
+        cmd = './mkbeast.py --generations {} ../templates/patient_beast_template.xml {} >{}'.format(env['GENERATIONS'], sources, target[0])
+    else:
+        cmd = './mkbeast.py ../templates/patient_beast_template.xml {} >{}'.format(sources, target[0])
     return cmd
 
 def generate_BEASTCommand(target, source, env, for_signature):

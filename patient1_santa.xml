@@ -81,7 +81,7 @@ GAGGATTAG
 
 		<epoch>
 		  <name>initial</name>
-		  <generationCount>1000</generationCount>			
+		  <generationCount>50000</generationCount>			
 		</epoch>
 		
 		<samplingSchedule>

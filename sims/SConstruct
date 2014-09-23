@@ -1,0 +1,98 @@
+''' 
+
+Scons file for driving Nestly to create a hierachy of directories
+and control files that can explore various paramter settings of Santa
+and BEAST.
+
+The main idea is to have a hierarchy of directories that vary the
+branch lengths of simulated sibling HIV clades.  In addition for each
+pair of siblings, we want to vary BEAST parameters to explore the
+effect of various evolutionary clock models on the inferrence of
+ancestral sequences.
+
+We start with a single sequence fro mwhich we simulat multiple
+generations of HIV evolution.  We sample this evolutionaery history at
+a certain timepoint, say at generation 400, to create patient1.  Then
+we sample the same evolutionary history at a several different
+timepoints, say 100, 500, 1000, and 10000 generations, to create
+patient2.  Next we create a BEAST configuration that combines the
+samples from patient1 ad patient2 and ask it to infer the ancestral
+sequence at the MRCA of these sequences.
+
+'''
+
+
+
+# Simulations for lcfit
+import os
+import os.path
+
+from nestly import Nest
+from nestly.scons import SConsWrap
+from SCons.Script import Environment
+
+environ = os.environ.copy()
+
+for k in ('SLURM_NTASKS', 'SLURM_NPROCS', 'SLURM_NNODES',
+          'SLURM_NTASKS_PER_CORE', 'SLURM_CPUS_PER_TASK', 'SLURM_EXCLUSIVE'):
+    environ[k] = '1'
+environ['SLURM_TIMELIMIT'] = '0-6'
+
+env = Environment(ENV=environ)
+env.PrependENVPath('PATH', '../bin')
+
+n = Nest(base_dict={'n_sites': 1000})
+w = SConsWrap(n, 'runs', alias_environment=env)
+
+env['SANTAJAR']= os.path.expanduser('~/src/matsen/tools/santa-sim/dist/santa.jar')
+
+# build the HIV evolutionary history fro mwhich we will sample
+sequences = env.Command('hivsim.fa',
+                        [ "../patient1_santa.xml", env['SANTAJAR'] ],
+                        [ "java -jar ${SANTAJAR} ${SOURCES[0]}",
+                          Move('${TARGET}', "patient1.fa")])[0]
+
+
+# Sample the right host at various
+# timepoints along its evolution
+
+# for each right sister clades,
+# infer ancestral sequence in two ways - 1) by including the left sister clade, and 2) by inferring over just the right sister clade.
+
+# estimate distance from each inferred sequence to actaul root sequence.
+
+
+n.add('left_branch_length', [400])
+
+n.add('right_branch_length', [100, 500, 1000, 10000])
+
+# For each data set, we evaluated both strict and relaxed uncorrelated lognormal clock models. 
+n.add('clock_model', ['relaxed', 'strict'])
+
+
+@w.add_target_with_env(env)
+def config_beast(env, outdir, c):
+    target = os.path.join(outdir, 'beast_in.xml')
+    
+    return env.Command(target,
+                       [sequences, '../templates/${clock_model}-clock.xml'],
+                       """ mkbeast.py --generations  ${left_branch_length},${right_branch_length} ${SOURCES[1]}  ${SOURCES[0]} >${TARGET}""")[0]
+
+@w.add_target_with_env(env)
+def runbeast(env, outdir, c):
+    target = [ os.path.join(outdir, 'ancestralSequences.log'),
+               os.path.join(outdir, 'beastout.log'),
+               os.path.join(outdir, 'beastout.trees') ]
+    return env.Command(target,
+                       [c['config_beast']],
+                       " beast -working -overwrite -beagle ${SOURCES} ")
+
+
+@w.add_target_with_env(env)
+def analysis(env, outdir, c):
+    return env.Command(os.path.join(outdir, 'distance.csv'),
+                       [os.path.join(outdir, 'ancestralSequences.log'), os.path.join(outdir, 'beastout.log')],
+                       "distance.py ../hiv_pol.fa  ${SOURCES} >${TARGET} ")
+
+
+
