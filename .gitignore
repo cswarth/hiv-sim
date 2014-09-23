@@ -1,0 +1,5 @@
+/sims/runs
+/sims/hivsim.fa
+/sims/.sconsign.dblite
+/venv
+*.pyc

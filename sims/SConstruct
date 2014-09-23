@@ -46,7 +46,7 @@ w = SConsWrap(n, 'runs', alias_environment=env)
 
 env['SANTAJAR']= os.path.expanduser('~/src/matsen/tools/santa-sim/dist/santa.jar')
 
-# build the HIV evolutionary history fro mwhich we will sample
+# build the HIV evolutionary history from which we will sample
 sequences = env.Command('hivsim.fa',
                         [ "../patient1_santa.xml", env['SANTAJAR'] ],
                         [ "java -jar ${SANTAJAR} ${SOURCES[0]}",
