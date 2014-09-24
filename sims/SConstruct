@@ -101,7 +101,15 @@ def analysis(env, outdir, c):
                        [os.path.join(outdir, 'ancestralSequences.log'), os.path.join(outdir, 'beastout.log')],
                        "distance.py ../hiv_pol.fa  ${SOURCES} >${TARGET} ")
 
-print([i['analysis'] for _, i in w])
+
+@w.add_target_with_env(env)
+def mcc(env, outdir, c):
+    return env.Command(os.path.join(outdir, 'mcc.tree'),
+                       os.path.join(outdir, 'beastout.trees'),
+                       "treeannotator ${SOURCES} ${TARGET} ")
+
+
+# aggregate the individual distance files into one single file
 env.Command(['distances.csv'],
     [i['analysis'] for _, i in w],
     'aggregate_distance.r ${SOURCES} >${TARGET}')
