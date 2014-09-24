@@ -70,6 +70,14 @@
     <coalescentSimulator id="startingTree">
 	<taxa idref="taxa"/>
 	<constantSize idref="constant"/>
+	{% for pid,patient in patients.iteritems() -%}
+	{% for k,visit in patient.bydate.iteritems() -%}
+	<coalescentSimulator>
+	    <taxa idref="taxa({{k}})"/>
+	    <constantSize idref="constant"/>
+	</coalescentSimulator>
+	{%-endfor%}
+	{%-endfor%}
     </coalescentSimulator>
 
     <!-- Generate a tree model                                                   -->
@@ -248,7 +256,16 @@
 		    <parameter idref="constant.popSize"/>
 		</oneOnXPrior>
 		<coalescentLikelihood idref="coalescent"/>
-	    </prior>
+
+		{% for pid,patient in patients.iteritems() -%}
+		{% for k,visit in patient.bydate.iteritems() -%}
+	 	<booleanLikelihood id="likelihood({{k}})">
+		    <monophylyStatistic idref="monophyly({{k}})"/>
+		</booleanLikelihood>
+		{%-endfor%}
+		{%-endfor%}
+
+   </prior>
 	    <likelihood id="likelihood">
 		<ancestralTreeLikelihood idref="treeLikelihood"/>
 	    </likelihood>
