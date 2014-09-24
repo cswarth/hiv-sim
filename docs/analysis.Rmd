@@ -1,0 +1,96 @@
+---
+title: "Inferring ancestral founders from simulated HIV-1 sequences"
+output:
+html_document:
+theme: cerulean
+---
+
+HIV-1 evolution was simulated for 50,000 generations, sampling 100 sequences from each generation.
+
+From this single evolutionary lineage, two generations were
+ sampled to simulate a transmission hierarchy.
+ For example, 10 sequences were selected from generation 400, and 10
+ sequences were selected from generation 1000.  These sequences were
+ grouped into a mono-phyletic taxa, forming two main branches for a
+ phylogenetic tree. BEAST was used to infer sequences at the root of
+ this tree.
+
+ One branch was kept constant, selected from generation 400, while
+ the other branch was selected from generations, 100, 500, 1000, and
+ 10,0000 of the simulated lineage.  These datasets were used to infer ancestral sequeces for strict and relaxed molecular clock models, resulting in eight BEAST runs in total.
+ 
+
+```{r echo=FALSE, results='hide'}
+library(ape)
+tree <- read.nexus("../sims/runs/400/100/relaxed/mcc.tree")  # nexus format
+plot(tree,cex=0.7,root.edge = TRUE, direction = "rightwards")
+
+tree <- read.nexus("../sims/runs/400/500/relaxed/mcc.tree")  # nexus format
+plot(tree,cex=0.7,root.edge = TRUE, direction = "rightwards")
+
+tree <- read.nexus("../sims/runs/400/1000/relaxed/mcc.tree")  # nexus format
+plot(tree,cex=0.7,root.edge = TRUE, direction = "rightwards")
+
+tree <- read.nexus("../sims/runs/400/10000/relaxed/mcc.tree")  # nexus format
+plot(tree,cex=0.7,root.edge = TRUE, direction = "rightwards")
+
+
+```
+
+
+```{r echo=FALSE, results='hide'}
+library(ggplot2)
+library(scales)
+library(ape)
+
+df <- read.csv("../sims/distances.csv", comment="#")
+```
+
+Weighted distance of consensus sequence at MRCA from actual founding sequence, weighted by tree posterior probability.
+```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE, results='hide'}
+    p <- ggplot(df, aes(x=right, y=exp.wdist)) +
+         geom_line() +
+         geom_point() +
+              facet_grid(clock~., scales="free_y", space="free") +
+         ylab('Distance (normalized mismatches\nweighted by posterior)') +
+         xlab('Right-hand branch length (generations)')
+    p <- p + ggtitle("Weighted distance\n- inferred sequence to actual founder -\nby right-hand branch length") + 
+         theme(plot.title = element_text(lineheight=.8, face="bold"))
+
+print(p)
+
+
+```
+
+
+Log weighted distance of consensus sequence at MRCA from actual founding sequence, weighted by tree posterior probability.
+```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE, results='hide'}
+    p <- ggplot(df, aes(x=right, y=wdist)) +
+         geom_line() +
+             geom_point() +
+
+              facet_grid(clock~., scales="free_y", space="free") +
+         ylab('Log-Distance (normalized mismatches\nweighted by posterior)') +
+         xlab('Right-hand branch length (generations)')
+    p <- p + ggtitle("Log-Weighted distance\n- inferred sequence to actual founder -\nby right-hand branch length") + 
+         theme(plot.title = element_text(lineheight=.8, face="bold"))
+
+print(p)
+
+
+```
+
+
+Distance of consensus sequence at MRCA from actual founding sequence, segregated by molecular clock model.
+```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE, results='hide'}
+    p <- ggplot(df, aes(x=clock, y=mean)) +
+         geom_boxplot() +
+         ylab('Mean distance (mismatches)') +
+         xlab('molecular clock')
+    p <- p + ggtitle("Average distance\n- inferred sequence to actual founder -\nby molecular clock") + 
+         theme(plot.title = element_text(lineheight=.8, face="bold"))
+
+print(p)
+
+
+```
