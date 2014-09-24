@@ -1,6 +1,22 @@
+# Unfortunately cannot install SCons from requirments.txt b/c
+# installation requires the --egg option.
+# Instead we install it from Makefile.
+# http://stackoverflow.com/a/19697682/1135316
+# SCons
+
+# we want the latest development version of Nestly, version 0.6-dev
+-e git+https://github.com/fhcrc/nestly.git#egg=Nestly
+
+# numpy has to be installed before scipy or There Will Be Errors
 numpy==1.9.0
 scipy==0.14.0
+
 argparse==1.2.1
 biopython==1.64
 pysam==0.8.0
+
+# I think the next package is a preprequisite of one of the other so
+# doesn't need to be explicitly listed here.
 # wsgiref==0.1.2
+
+Jinja2==2.7.3

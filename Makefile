@@ -15,12 +15,14 @@ export PATH :=venv/bin:${PATH}
 venv:
 	virtualenv -p /usr/bin/python venv
 	easy_install pip
-	#pip install -U distribute
-	pip install --egg SCons
-	pip install git+https://github.com/fhcrc/nestly.git
+	@#pip install -U distribute
+	@# Unfortunately cannot install SCons from requirments.txt b/c
+	@# installation requires the --egg option.
+	@# http://stackoverflow.com/a/19697682/1135316
+	pip install --egg -q SCons
 	pip install -r python/requirements.txt
 
 
 
-.phony: packages
+.PHONY: packages venv
 
