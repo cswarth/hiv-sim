@@ -101,5 +101,7 @@ def analysis(env, outdir, c):
                        [os.path.join(outdir, 'ancestralSequences.log'), os.path.join(outdir, 'beastout.log')],
                        "distance.py ../hiv_pol.fa  ${SOURCES} >${TARGET} ")
 
-
-
+print([i['analysis'] for _, i in w])
+env.Command(['distances.csv'],
+    [i['analysis'] for _, i in w],
+    'aggregate_distance.r ${SOURCES} >${TARGET}')

@@ -17,11 +17,14 @@ from itertools import izip   # for python3, just use built-in zip
 import numpy as np
 
 from scipy.misc import logsumexp
+from datetime import datetime, date, timedelta
+import getpass
 
 import math
 import sys
 
 import pysam
+import os.path
 
 # parse a beast trait output file.
 # this is expected to be a a state output file from beast holding inferred ancestral sequences.
@@ -115,6 +118,10 @@ def main():
     exp.wdist = exp(wdist)
     '''
 
+    print("# date: {}".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    print("# user: {}".format(getpass.getuser()))
+    print("# command: {}".format(" ".join(sys.argv)))
+    print("# workingdir: {}".format(os.getcwd()))
     print("min\tmax\tmean\twdist\texp.wdist")
     print("{}\t{}\t{:.3}\t{:.5}\t{:.5}".format(np.int(np.min(changes)), np.int(np.max(changes)), np.mean(changes), wdist, np.exp(wdist)))
 
