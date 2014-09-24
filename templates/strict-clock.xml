@@ -28,6 +28,17 @@
 	{%-endfor%}
     </taxa>
 
+    {% for pid,patient in patients.iteritems() -%}
+    {% for k,visit in patient.bydate.iteritems() -%}
+    <taxa id="taxa({{k}})">
+	{% for taxon in visit.taxa -%}
+	<taxon idref="{{taxon.id}}"/>
+	{% endfor%}
+    </taxa>
+    {%-endfor%}
+    {%-endfor%}
+
+
     <!-- The sequence alignment (each sequence refers to a taxon above).         -->
     <!-- ntax=${taxon_count} nchar=${site_count} -->
     <alignment id="alignment" dataType="nucleotide">
@@ -75,6 +86,27 @@
 	    <parameter id="treeModel.allInternalNodeHeights"/>
 	</nodeHeights>
     </treeModel>
+
+
+    {% for pid,patient in patients.iteritems() -%}
+    {% for k,visit in patient.bydate.iteritems() -%}
+
+
+    <tmrcaStatistic id="tmrca({{k}})">
+	<mrca>
+	    <taxa idref="taxa({{k}})"/>
+	</mrca>
+	<treeModel idref="treeModel"/>
+    </tmrcaStatistic>
+    <monophylyStatistic id="monophyly({{k}})">
+	<mrca>
+	    <taxa idref="taxa({{k}})"/>
+	</mrca>
+	<treeModel idref="treeModel"/>
+    </monophylyStatistic>
+
+    {%-endfor%}
+    {%-endfor%}
 
     <!-- Generate a coalescent likelihood                                        -->
     <coalescentLikelihood id="coalescent">
