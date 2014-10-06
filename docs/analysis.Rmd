@@ -21,32 +21,54 @@ From this single evolutionary lineage, two generations were
  
 
 ```{r echo=FALSE, results='hide'}
-library(ape)
-tree <- read.nexus("../sims/runs/400/100/relaxed/mcc.tree")  # nexus format
-plot(tree,cex=0.7,root.edge = TRUE, direction = "rightwards")
-
-tree <- read.nexus("../sims/runs/400/500/relaxed/mcc.tree")  # nexus format
-plot(tree,cex=0.7,root.edge = TRUE, direction = "rightwards")
-
-tree <- read.nexus("../sims/runs/400/1000/relaxed/mcc.tree")  # nexus format
-plot(tree,cex=0.7,root.edge = TRUE, direction = "rightwards")
-
-tree <- read.nexus("../sims/runs/400/10000/relaxed/mcc.tree")  # nexus format
-plot(tree,cex=0.7,root.edge = TRUE, direction = "rightwards")
-
-
-```
-
-
-```{r echo=FALSE, results='hide'}
 library(ggplot2)
 library(scales)
+library(plyr)
 library(ape)
 
-df <- read.csv("../sims/distances.csv", comment="#")
+tryCatch(
+{
+    df <- read.csv("../sims/distances.csv", comment="#")
+},
+error=function(e) {
+    stop('Cannot open "../sims/distances.csv"')
+})
+
+
+# Show the tree corresponding to the first entry in the distances data frame.
+fn <- with(df[which(df$clock=="relaxed")[1:4],,drop=FALSE], { sprintf("../sims/runs/%d/%d/%s/mcc.tree", left, right, clock) })
+message(sprintf("reading \"%s\"", fn))
+lapply(fn, function(fn) {
+tree <- read.nexus(fn)  # nexus format
+plot(tree,cex=0.7,root.edge = TRUE, direction = "rightwards", main=fn)
+box(lwd = 2)
+
+})
+
+
 ```
 
-Weighted distance of consensus sequence at MRCA from actual founding sequence, weighted by tree posterior probability.
+Weighted distance from actual founding sequence of consensus sequence
+at MRCA of patient2, weighted by tree posterior probability.
+```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE, results='hide'}
+    p <- ggplot(df, aes(x=right, y=exp.wdist)) +
+         geom_line() +
+         geom_point() +
+              facet_grid(clock~., scales="free_y", space="free") +
+         ylab('Distance (normalized mismatches\nweighted by posterior)') +
+         xlab('Right-hand branch length (generations)')
+    p <- p + ggtitle("Weighted distance\n- inferred sequence to actual founder -\nby right-hand branch length") + 
+         theme(plot.title = element_text(lineheight=.8, face="bold"))
+
+print(p)
+
+
+```
+
+
+
+Weighted distance from actual founding sequence of consensus sequence
+at MRCA of patient2, weighted by tree posterior probability.
 ```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE, results='hide'}
     p <- ggplot(df, aes(x=right, y=exp.wdist)) +
          geom_line() +
