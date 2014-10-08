@@ -15,9 +15,16 @@
     <!-- The list of taxa to be analysed (can also include dates/ages).          -->
     <!-- ntax=${taxon_count} -->
 
+
+    <!-- The overall tax include all patient sequences plus a the original -->
+    <!-- founder as an outgroup  -->
     <taxa id="taxa">
-	{% for pid,patient in patients.iteritems() -%}
-	{% for k,visit in patient.bydate.iteritems() -%}
+	<taxon id="HIV-POL">
+	    <date value="0" direction="forwards" units="days"/>
+	</taxon>
+
+	{% for pid, patient in patients.iteritems() -%}
+	{% for vid,visit in patient.iteritems() -%}
 	{% for taxon in visit.taxa -%}
 	<taxon id="{{taxon.id}}">
 	    <date value="{{visit.date}}" direction="forwards" units="days"/>
@@ -27,9 +34,23 @@
 	{%-endfor%}
     </taxa>
 
+    <!-- Make a tax containing just patient samples, without the outgroup. -->
+    <!-- We will infer the ancestral sequence at the root of this taxa. -->
+    <taxa id="taxa(patients)">
+	{% for pid, patient in patients.iteritems() -%}
+	{% for vid,visit in patient.iteritems() -%}
+	{% for taxon in visit.taxa -%}
+	<taxon idref="{{taxon.id}}"/>
+	{% endfor%}
+	{%-endfor%}
+	{%-endfor%}
+    </taxa>
+
+    <!-- Make seperate taxa for each patent visit. -->
+    <!-- Later we will mark some (but not al) of these tax as monophyletic. -->
     {% for pid,patient in patients.iteritems() -%}
-    {% for k,visit in patient.bydate.iteritems() -%}
-    <taxa id="taxa({{k}})">
+    {% for vid,visit in patient.iteritems() -%}
+    <taxa id="taxa({{pid}}.{{vid}})">
 	{% for taxon in visit.taxa -%}
 	<taxon idref="{{taxon.id}}"/>
 	{% endfor%}
@@ -41,9 +62,52 @@
     <!-- The sequence alignment (each sequence refers to a taxon above).         -->
     <!-- ntax=${taxon_count} nchar=${site_count} -->
     <alignment id="alignment" dataType="nucleotide">
-	{% for pid,patient in patients.iteritems() -%}
-	{% for k,visit in patient.bydate.iteritems() -%}
-	{% for taxon in visit.taxa -%}
+      <sequence>
+	<taxon idref="HIV-POL"/>
+ATGAGTTTGCCAGGAAGATGGAAACCAAAAATGATAGGGGGAATTGGAGGTTTTATCAAAGTAAGACAGT
+ATGATCAGATACTCATAGAAATCTGTGGACATAAAGCTATAGGTACAGTATTAGTAGGACCTACACCTGT
+CAACATAATTGGAAGAAATCTGTTGACTCAGATTGGTTGCACTTTAAATTTTCCCATTAGCCCTATTGAG
+ACTGTACCAGTAAAATTAAAGCCAGGAATGGATGGCCCAAAAGTTAAACAATGGCCATTGACAGAAGAAA
+AAATAAAAGCATTAGTAGAAATTTGTACAGAGATGGAAAAGGAAGGGAAAATTTCAAAAATTGGGCCTGA
+AAATCCATACAATACTCCAGTATTTGCCATAAAGAAAAAAGACAGTACTAAATGGAGAAAATTAGTAGAT
+TTCAGAGAACTTAATAAGAGAACTCAAGACTTCTGGGAAGTTCAATTAGGAATACCACATCCCGCAGGGT
+TAAAAAAGAAAAAATCAGTAACAGTACTGGATGTGGGTGATGCATATTTTTCAGTTCCCTTAGATGAAGA
+CTTCAGGAAGTATACTGCATTTACCATACCTAGTATAAACAATGAGACACCAGGGATTAGATATCAGTAC
+AATGTGCTTCCACAGGGATGGAAAGGATCACCAGCAATATTCCAAAGTAGCATGACAAAAATCTTAGAGC
+CTTTTAGAAAACAAAATCCAGACATAGTTATCTATCAATACATGGATGATTTGTATGTAGGATCTGACTT
+AGAAATAGGGCAGCATAGAACAAAAATAGAGGAGCTGAGACAACATCTGTTGAGGTGGGGACTTACCACA
+CCAGACAAAAAACATCAGAAAGAACCTCCATTCCTTTGGATGGGTTATGAACTCCATCCTGATAAATGGA
+CAGTACAGCCTATAGTGCTGCCAGAAAAAGACAGCTGGACTGTCAATGACATACAGAAGTTAGTGGGGAA
+ATTGAATTGGGCAAGTCAGATTTACCCAGGGATTAAAGTAAGGCAATTATGTAAACTCCTTAGAGGAACC
+AAAGCACTAACAGAAGTAATACCACTAACAGAAGAAGCAGAGCTAGAACTGGCAGAAAACAGAGAGATTC
+TAAAAGAACCAGTACATGGAGTGTATTATGACCCATCAAAAGACTTAATAGCAGAAATACAGAAGCAGGG
+GCAAGGCCAATGGACATATCAAATTTATCAAGAGCCATTTAAAAATCTGAAAACAGGAAAATATGCAAGA
+ATGAGGGGTGCCCACACTAATGATGTAAAACAATTAACAGAGGCAGTGCAAAAAATAACCACAGAAAGCA
+TAGTAATATGGGGAAAGACTCCTAAATTTAAACTGCCCATACAAAAGGAAACATGGGAAACATGGTGGAC
+AGAGTATTGGCAAGCCACCTGGATTCCTGAGTGGGAGTTTGTTAATACCCCTCCCTTAGTGAAATTATGG
+TACCAGTTAGAGAAAGAACCCATAGTAGGAGCAGAAACCTTCTATGTAGATGGGGCAGCTAACAGGGAGA
+CTAAATTAGGAAAAGCAGGATATGTTACTAATAGAGGAAGACAAAAAGTTGTCACCCTAACTGACACAAC
+AAATCAGAAGACTGAGTTACAAGCAATTTATCTAGCTTTGCAGGATTCGGGATTAGAAGTAAACATAGTA
+ACAGACTCACAATATGCATTAGGAATCATTCAAGCACAACCAGATCAAAGTGAATCAGAGTTAGTCAATC
+AAATAATAGAGCAGTTAATAAAAAAGGAAAAGGTCTATCTGGCATGGGTACCAGCACACAAAGGAATTGG
+AGGAAATGAACAAGTAGATAAATTAGTCAGTGCTGGAATCAGGAAAGTACTATTTTTAGATGGAATAGAT
+AAGGCCCAAGATGAACATGAGAAATATCACAGTAATTGGAGAGCAATGGCTAGTGATTTTAACCTGCCAC
+CTGTAGTAGCAAAAGAAATAGTAGCCAGCTGTGATAAATGTCAGCTAAAAGGAGAAGCCATGCATGGACA
+AGTAGACTGTAGTCCAGGAATATGGCAACTAGATTGTACACATTTAGAAGGAAAAGTTATCCTGGTAGCA
+GTTCATGTAGCCAGTGGATATATAGAAGCAGAAGTTATTCCAGCAGAAACAGGGCAGGAAACAGCATATT
+TTCTTTTAAAATTAGCAGGAAGATGGCCAGTAAAAACAATACATACTGACAATGGCAGCAATTTCACCGG
+TGCTACGGTTAGGGCCGCCTGTTGGTGGGCGGGAATCAAGCAGGAATTTGGAATTCCCTACAATCCCCAA
+AGTCAAGGAGTAGTAGAATCTATGAATAAAGAATTAAAGAAAATTATAGGACAGGTAAGAGATCAGGCTG
+AACATCTTAAGACAGCAGTACAAATGGCAGTATTCATCCACAATTTTAAAAGAAAAGGGGGGATTGGGGG
+GTACAGTGCAGGGGAAAGAATAGTAGACATAATAGCAACAGACATACAAACTAAAGAATTACAAAAACAA
+ATTACAAAAATTCAAAATTTTCGGGTTTATTACAGGGACAGCAGAAATCCACTTTGGAAAGGACCAGCAA
+AGCTCCTCTGGAAAGGTGAAGGGGCAGTAGTAATACAAGATAATAGTGACATAAAAGTAGTGCCAAGAAG
+AAAAGCAAAGATCATTAGGGATTATGGAAAACAGATGGCAGGTGATGATTGTGTGGCAAGTAGACAGGAT
+GAGGATTAG
+</sequence>
+      {% for pid,patient in patients.iteritems() -%}
+      {% for vid,visit in patient.iteritems() -%}
+      {% for taxon in visit.taxa -%}
 	<sequence>
 	    <taxon idref="{{taxon.id}}"/>
 	    {{taxon.seq}}
@@ -71,9 +135,9 @@
 	<taxa idref="taxa"/>
 	<constantSize idref="constant"/>
 	{% for pid,patient in patients.iteritems() -%}
-	{% for k,visit in patient.bydate.iteritems() -%}
+	{% for vid,visit in patient.iteritems() -%}
 	<coalescentSimulator>
-	    <taxa idref="taxa({{k}})"/>
+	    <taxa idref="taxa({{pid}}.{{vid}})"/>
 	    <constantSize idref="constant"/>
 	</coalescentSimulator>
 	{%-endfor%}
@@ -95,25 +159,22 @@
     </treeModel>
 
     {% for pid,patient in patients.iteritems() -%}
-    {% for k,visit in patient.bydate.iteritems() -%}
-
-
-    <tmrcaStatistic id="tmrca({{k}})">
+    {% for vid,visit in patient.iteritems() -%}
+    <tmrcaStatistic id="tmrca({{pid}}.{{vid}})">
 	<mrca>
-	    <taxa idref="taxa({{k}})"/>
+	    <taxa idref="taxa({{pid}}.{{vid}})"/>
 	</mrca>
 	<treeModel idref="treeModel"/>
     </tmrcaStatistic>
-    <monophylyStatistic id="monophyly({{k}})">
+    <monophylyStatistic id="monophyly({{pid}}.{{vid}})">
 	<mrca>
-	    <taxa idref="taxa({{k}})"/>
+	    <taxa idref="taxa({{pid}}.{{vid}})"/>
 	</mrca>
 	<treeModel idref="treeModel"/>
     </monophylyStatistic>
 
-    {%-endfor%}
-    {%-endfor%}
-
+    {% endfor %}
+    {%- endfor %}
 
     <!-- Generate a coalescent likelihood                                        -->
     <coalescentLikelihood id="coalescent">
@@ -237,7 +298,7 @@
     </operators>
 
     <!-- Define MCMC                                                             -->
-    <mcmc id="mcmc" chainLength="800000" autoOptimize="true" operatorAnalysis="10.ops">
+    <mcmc id="mcmc" chainLength="1000000" autoOptimize="true" operatorAnalysis="10.ops">
 	<posterior id="posterior">
 	    <prior id="prior">
 		<logNormalPrior mean="1.0" stdev="1.25" offset="0.0" meanInRealSpace="false">
@@ -257,15 +318,23 @@
 		</oneOnXPrior>
 		<coalescentLikelihood idref="coalescent"/>
 
-		{% for pid,patient in patients.iteritems() -%}
-		{% for k,visit in patient.bydate.iteritems() -%}
-	 	<booleanLikelihood id="likelihood({{k}})">
-		    <monophylyStatistic idref="monophyly({{k}})"/>
-		</booleanLikelihood>
-		{%-endfor%}
-		{%-endfor%}
+		{# we want only the enforce monophyly only for the
+		second (and subsequent) patient(s), but we want this to work if there are
+		less than two patients.   So we skip the first patient,
+		and only the first visit #}
 
-   </prior>
+		{% for pid,patient in patients.iteritems() -%}
+		{% if loop.index >= 2 -%}
+		{% for vid,visit in patient.iteritems() %}
+		{% if loop.index == 1 -%}
+	 	<booleanLikelihood id="likelihood({{pid}}.{{vid}})">
+		  <monophylyStatistic idref="monophyly({{pid}}.{{vid}})"/>
+		</booleanLikelihood>
+		{%- endif %}
+		{%- endfor %}
+		{%- endif %}
+		{%- endfor%}
+	    </prior>
 	    <likelihood id="likelihood">
 		<ancestralTreeLikelihood idref="treeLikelihood"/>
 	    </likelihood>
@@ -292,7 +361,7 @@
 	</log>
 
 	<!-- write log to file                                                       -->
-	<log id="fileLog" logEvery="200" fileName="beastout.log" overwrite="false">
+	<log id="fileLog" logEvery="400" fileName="beastout.log" overwrite="false">
 	    <posterior idref="posterior"/>
 	    <prior idref="prior"/>
 	    <likelihood idref="likelihood"/>
@@ -310,7 +379,7 @@
 	</log>
 
 	<!-- write tree log to file                                                  -->
-	<logTree id="treeFileLog" logEvery="200" nexusFormat="true" fileName="beastout.trees" sortTranslationTable="true">
+	<logTree id="treeFileLog" logEvery="400" nexusFormat="true" fileName="beastout.trees" sortTranslationTable="true">
 	    <treeModel idref="treeModel"/>
 	    <trait name="rate" tag="rate">
 		<discretizedBranchRates idref="branchRates"/>
@@ -319,10 +388,18 @@
 	</logTree>
 
 	<!-- Ancestral state reconstruction -->
-	<log id="traitFileLog" logEvery="200" fileName="ancestralSequences.log">
+
+	<!-- Infer ancestral state at the mrca of all patients other than the -->
+	<!-- first. -->
+
+	
+	<log id="traitFileLog" logEvery="400" fileName="ancestralSequences.log">
 	    <ancestralTrait name="trait" traitName="states">
 		<treeModel idref="treeModel"/>
 		<ancestralTreeLikelihood idref="treeLikelihood"/>
+		<mrca>
+		  <taxa idref="taxa(patients)"/>
+		</mrca>
 	    </ancestralTrait>
 	</log>
 

@@ -1,144 +1,135 @@
-#!/usr/bin/python
-# make a new SANTA config file by inserting FASTA sequences into a generic template.
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+'''
+	Create a SANTA config file by combining sequences sampled from a FASTA file with a templated XML file.
+    SANTA simulates the evolution of a population of gene sequences forwards through time. It models the
+    underlying biological processes as discrete components; replication (including recombination), mutation, fitness and selection.
+    See https://code.google.com/p/santa-sim/
+
+    It is expected that most often, a single sequence will be sampled to create a founder sequence for the simulation.
+    However if you want to use more than one sequence to found your simulation, you can do so with the 'count' positional argument.
+'''
+
 from __future__ import print_function
 
-from lxml import etree
+import jinja2
+
 import re
 from Bio import SeqIO
+from collections import defaultdict
+import getpass
 from datetime import datetime, date, timedelta
 
-import sys, getopt
+import sys
+import argparse
+import os.path
 
+def build_parser():
+    """
+    Build the command-line argument parser.
+    """
+    def commaSplitter(str):
+        """
+        Argparse a comm-seperated list
+        """
+        # leave this here as a reminder of what I should do to make the argument parsing more robust
 
-# indent xml text for pretty-printing
-# assumes text within elements is not significant.
-def indent(elem, level=0):
-    i = "\n" + level*"\t"
-    if len(elem):
-        if not elem.text or not elem.text.strip():
-            elem.text = i + "\t"
-        if not elem.tail or not elem.tail.strip():
-            elem.tail = i
-        for elem in elem:
-            indent(elem, level+1)
-        if not elem.tail or not elem.tail.strip():
-            elem.tail = i
-    else:
-        if level and (not elem.tail or not elem.tail.strip()):
-            elem.tail = i
+        # if sqrt != int(sqrt):
+        #      msg = "%r is not a perfect square" % string
+        #      raise argparse.ArgumentTypeError(msg)
+        # return value
+        return str.split(',')
 
+    def existing_file(fname):
+        """
+        Argparse type for an existing file
+        """
+        if not os.path.isfile(fname):
+            raise ValueError("Invalid file: " + str(fname))
+        return fname
 
-def main(argv):
-    inputfile = ''
-    outputfile = ''
-    data = ''
-    datestr = None
-    prefix = None
-    usage = 'mksanta.py [-p <prefix>] [-d sampledate] <templatefile> <source> <generation> <count>'
-    try:
-        opts, args = getopt.getopt(argv,"hp:d:",["prefix=", "date="])
-    except getopt.GetoptError:
-        print(usage, file=sys.stderr)
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt == '-h':
-            print(usage, file=sys.stderr)
-            sys.exit()
-        elif opt in ("-p", "--prefix"):
-            prefix = arg
-        elif opt in ("-d", "--date"):
-            # if the user supplies a datestr on the commandline then we will not
-            # use the starting date found in the source file
-            datestr = arg
+    parser = argparse.ArgumentParser(description=__doc__)
 
+    parser.add_argument('-p', '--prefix', help='dont really know what this does...',
+            action='store', default='patient', dest='prefix')
+    parser.add_argument('-d', '--date', help='dont really know what this does...',
+            action='store', default='', dest='sampledate')
+    parser.add_argument('-g', '--generation', help='generation to sample from',
+            action='store', default=None, dest='generation')
+    parser.add_argument('template', type=argparse.FileType('r'), help='BEAST config template file')
+    parser.add_argument('fastaFile', type=argparse.FileType('r'), help='file of sequences (in FASTA format)')
+    parser.add_argument('count', nargs='?', type=int, default=-1, help='number of sample sequences to extract')
+
+    return parser
 
 
 
-    argTemplate = args[0]
-    argSourcefile = args[1]
-    argGeneration = args[2]
-    argCount = args[3]
+def main():
+    '''
+    Parse a generic template and insert sequences from a FASTA file into the middle,
+    separated by the appropriate XML tags.
+    '''
 
-    count = int(argCount)
-    # Parse a generic template and insert sequences from a FASTA file
-    # into the middle, separated by the appropriate XML tags.
+    parser = build_parser()
+    a = parser.parse_args()
 
-    tree = etree.parse(argTemplate)
-
-        
-    name_regex = re.compile("(?P<patient>^[^_]*)_(?P<generation>.*)_")
-
+    sourcefile = a.fastaFile.name
+    
     # find the sequences from the chosen <generation> and
     # randomly choose <count> of them to pass on to the next generation
-    with open(argSourcefile, "rU") as handle:
-        for record in SeqIO.parse(handle, "fasta") :
+    data = []
+    cumulativeGeneration = 0
+    with a.fastaFile as fp:
+        for record in SeqIO.parse(fp, "fasta") :
             # import pdb; pdb.set_trace()
 
             fields = record.id.split('|')
-            match = name_regex.search(fields[0])
-            patient = match.group('patient')
-            generation = match.group('generation')
-
-            if generation == argGeneration:
-                if count > 0:
+            subfields = fields[0].split('_')
+            patient = subfields[0]
+            generation = subfields[1] if len(subfields) >= 2 else None
+            
+            if not a.generation or generation == a.generation:
+                if a.count != 0:
                     # Randomly choose a sequence.  For now
                     # assume they are already randomy sorted and choose from the
                     # order in which they are presented.
                     #
-                    # need to assert the all the lenghts are the same....
+                    # need to assert the all the lengths are the same....
                     # if not, we will have to align all the sequences to one another...
                     ll = len(record.seq)
-                    data += ">{}\n".format(record.id)
-                    data += "{}\n".format(record.seq)
+                    data.append(record)
+                    a.count -= 1
+                    cumulativeGeneration = int(fields[3]) if len(fields) >=3 else 0
 
-                    sampledGeneration = int(generation)
-                    cumulativeGeneration  = int(fields[3])
-                    count -= 1
-
-            if count <= 0:
+            if a.count == 0:
                 # break out when we have collected all the sequences we need
                 break
 
-    sequences = etree.Element("sequences")
-    sequences.text = data
 
-    length = etree.Element("length")
-    length.text = str(ll)
-
-
-    # Look for the genome tag
-    # fill it in with sequence definitions
-    genome = tree.find(".//genome")
-    if (genome is None):
-        print("Cannot find genome")
-        print(etree.tostring(tree, pretty_print=True))
-        exit(1)
-
-    genome.clear()
-    genome.append(length)
-    genome.append(sequences)
-
-    if (prefix is None):
-        prefix = "patient"
-
-    # preprend the to the fasta output file name and the tag on each sequence.
-    fixme = tree.xpath("//*[starts-with(text(), 'patient')]") 
-    for e in fixme:
-        e.text = e.text.replace('patient', prefix)
 
     # compose a label to indicate where the starting population from the sample
-    label = tree.find("//samplingSchedule/sampler/alignment/label")
-    cumulativeGeneration += sampledGeneration
-    label.text = "{}_%g_%s|{}|{}|{}".format(prefix, argSourcefile, sampledGeneration, cumulativeGeneration)
+    a.generation = 0 if not a.generation else a.generation
+    cumulativeGeneration += int(a.generation)
+    
+    label= "{}_%g_%s|{}|{}|{}".format(a.prefix, os.path.basename(sourcefile), a.generation, cumulativeGeneration)
 
-    # pretty-print the tree
-    indent(tree.getroot())
-      
-    print(etree.tostring(tree, pretty_print=True))
+    with sys.stdout as fp:
+        env = jinja2.Environment(loader=jinja2.FileSystemLoader(searchpath="/"))
+        # Alias str.format to strformat in template
+        env.filters['strformat'] = str.format
+        template = env.get_template(os.path.abspath(a.template.name))
+        template.stream(data=data,
+                label=label,
+                date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                user=getpass.getuser(),
+                command=" ".join(sys.argv),
+                workdir=os.getcwd()).dump(fp)
 
 
+
+    
 if __name__ == "__main__":
-   main(sys.argv[1:])
+   main()
    
 
 

@@ -1,8 +1,8 @@
 ---
 title: "Inferring ancestral founders from simulated HIV-1 sequences"
-output:
-html_document:
+output: html_document
 theme: cerulean
+runtime: shiny
 ---
 
 HIV-1 evolution was simulated for 50,000 generations, sampling 100 sequences from each generation.

@@ -13,12 +13,9 @@
 
 <beast>
 
-    <!-- The list of taxa to be analysed (can also include dates/ages).          -->
-    <!-- ntax=${taxon_count} -->
-
     <taxa id="taxa">
-	{% for pid,patient in patients.iteritems() -%}
-	{% for k,visit in patient.bydate.iteritems() -%}
+	{% for pid, patient in patients.iteritems() -%}
+	{% for vid,visit in patient.iteritems() -%}
 	{% for taxon in visit.taxa -%}
 	<taxon id="{{taxon.id}}">
 	    <date value="{{visit.date}}" direction="forwards" units="days"/>
@@ -29,8 +26,8 @@
     </taxa>
 
     {% for pid,patient in patients.iteritems() -%}
-    {% for k,visit in patient.bydate.iteritems() -%}
-    <taxa id="taxa({{k}})">
+    {% for vid,visit in patient.iteritems() -%}
+    <taxa id="taxa({{pid}}.{{vid}})">
 	{% for taxon in visit.taxa -%}
 	<taxon idref="{{taxon.id}}"/>
 	{% endfor%}
@@ -42,9 +39,9 @@
     <!-- The sequence alignment (each sequence refers to a taxon above).         -->
     <!-- ntax=${taxon_count} nchar=${site_count} -->
     <alignment id="alignment" dataType="nucleotide">
-	{% for pid,patient in patients.iteritems() -%}
-	{% for k,visit in patient.bydate.iteritems() -%}
-	{% for taxon in visit.taxa -%}
+      {% for pid,patient in patients.iteritems() -%}
+      {% for vid,visit in patient.iteritems() -%}
+      {% for taxon in visit.taxa -%}
 	<sequence>
 	    <taxon idref="{{taxon.id}}"/>
 	    {{taxon.seq}}
@@ -72,9 +69,9 @@
 	<taxa idref="taxa"/>
 	<constantSize idref="constant"/>
 	{% for pid,patient in patients.iteritems() -%}
-	{% for k,visit in patient.bydate.iteritems() -%}
+	{% for vid,visit in patient.iteritems() -%}
 	<coalescentSimulator>
-	    <taxa idref="taxa({{k}})"/>
+	    <taxa idref="taxa({{pid}}.{{vid}})"/>
 	    <constantSize idref="constant"/>
 	</coalescentSimulator>
 	{%-endfor%}
@@ -97,18 +94,16 @@
 
 
     {% for pid,patient in patients.iteritems() -%}
-    {% for k,visit in patient.bydate.iteritems() -%}
-
-
-    <tmrcaStatistic id="tmrca({{k}})">
+    {% for vid,visit in patient.iteritems() -%}
+    <tmrcaStatistic id="tmrca({{pid}}.{{vid}})">
 	<mrca>
-	    <taxa idref="taxa({{k}})"/>
+	    <taxa idref="taxa({{pid}}.{{vid}})"/>
 	</mrca>
 	<treeModel idref="treeModel"/>
     </tmrcaStatistic>
-    <monophylyStatistic id="monophyly({{k}})">
+    <monophylyStatistic id="monophyly({{pid}}.{{vid}})">
 	<mrca>
-	    <taxa idref="taxa({{k}})"/>
+	    <taxa idref="taxa({{pid}}.{{vid}})"/>
 	</mrca>
 	<treeModel idref="treeModel"/>
     </monophylyStatistic>
@@ -222,13 +217,22 @@
 		</oneOnXPrior>
 		<coalescentLikelihood idref="coalescent"/>
 
+		{# we want only the enforce monophyly only for the
+		second (and subsequent) patient(s0, but we want this to work if there are
+		less than two patients.   So we skip the first patient,
+		and only the first visit #}
+
 		{% for pid,patient in patients.iteritems() -%}
-		{% for k,visit in patient.bydate.iteritems() -%}
-	 	<booleanLikelihood id="likelihood({{k}})">
-		    <monophylyStatistic idref="monophyly({{k}})"/>
+		{% if loop.index >= 2 -%}
+		{% for vid,visit in patient.iteritems() %}
+		{% if loop.index == 1 -%}
+	 	<booleanLikelihood id="likelihood({{pid}}.{{vid}})">
+		  <monophylyStatistic idref="monophyly({{pid}}.{{vid}})"/>
 		</booleanLikelihood>
-		{%-endfor%}
-		{%-endfor%}
+		{%- endif %}
+		{%- endfor %}
+		{%- endif %}
+		{%- endfor%}
 	    </prior>
 	    <likelihood id="likelihood">
 		<ancestralTreeLikelihood idref="treeLikelihood"/>
@@ -283,6 +287,10 @@
 	    <ancestralTrait name="trait" traitName="states">
 		<treeModel idref="treeModel"/>
 		<ancestralTreeLikelihood idref="treeLikelihood"/>
+		<mrca>
+		  <!-- Infer ancestral sequence at MRCA of all patients! -->
+		  <taxa idref="taxa"/>
+		</mrca>
 	    </ancestralTrait>
 	</log>
 

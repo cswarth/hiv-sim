@@ -1,0 +1,163 @@
+---
+title: "Inferring ancestral founders from simulated HIV-1 sequences"
+output: html_document
+theme: cerulean
+runtime: shiny
+---
+
+Patient1 is a simulated HIV-1 lineage covering 10,000 generations.
+At various points in the patient 1 lineage, a single sequence was
+sampled to use as the founder of a new lineage, "patient2".
+
+
+HIV-1 evolution was simulated for 10,000 generations, sampling 100 sequences from each generation.
+
+From this single evolutionary lineage, two generations were
+ sampled to simulate a transmission hierarchy.
+ For example, 10 sequences were selected from generation 400, and 10
+ sequences were selected from generation 1000.  These sequences were
+ grouped into a mono-phyletic taxa, forming two main branches for a
+ phylogenetic tree. BEAST was used to infer sequences at the root of
+ this tree.
+
+ One branch was kept constant, selected from generation 400, while
+ the other branch was selected from generations, 100, 500, 1000, and
+ 10,0000 of the simulated lineage.  These datasets were used to infer ancestral sequeces for strict and relaxed molecular clock models, resulting in eight BEAST runs in total.
+ 
+
+```{r echo=FALSE, results='hide'}
+library(ggplot2)
+library(scales)
+library(plyr)
+library(ape)
+library(ggvis)
+
+tryCatch(
+{
+    df <- read.csv("../sims/distances.csv", comment="#")
+},
+error=function(e) {
+    stop('Cannot open "../sims/distances.csv"')
+})
+
+# annotate each row with a unique value that wil be used to track values as graphs change.
+df$id <- 1:nrow(df)
+```
+
+```{r, , fig.width=4, fig.height=5, echo = FALSE}
+
+inputPanel(
+withTags(div(class='row-fluid',
+                 div(class='span4', selectInput("tree.Tinf.p1", "Patient-1 time since infection:",
+                     choices = sort(unique(df$Tinf.p1)))),
+                 div(class='span4', selectInput("tree.Ttrans", "Transmission time:",
+                     choices = sort(unique(df$Ttrans)))),
+                 div(class='span4', selectInput("tree.Tinf.p2", "Patient-2 time since infection:",
+                     choices = sort(unique(df$Tinf.p2))))
+
+             ))
+    )
+
+
+```
+
+```{r, , fig.width=4, fig.height=5, echo = FALSE}
+
+
+
+renderPlot({
+    fn <- sprintf("../sims/runs/%s/%s/%s/relaxed/mcc.tree", input$tree.Tinf.p1, input$tree.Ttrans, input$tree.Tinf.p2) 
+    tree <- read.nexus(fn)  # nexus format
+    plot(tree,root.edge = TRUE, direction = "rightwards", main=fn, cex.main=3, type="cladogram")
+    box(lwd = 2)
+  })
+
+
+
+```
+
+
+Weighted distance from actual founding sequence of consensus sequence
+at MRCA of patient2, weighted by tree posterior probability.
+
+```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE}
+
+
+inputPanel(
+withTags(div(class='row-fluid',
+                 div(class='span4', selectInput("Tinf.p1", "Patient-1 time since infection:",
+  choices = c("-all-", sort(unique(df$Tinf.p1))), 
+  selected = "all")),
+             
+                 div(class='span4', selectInput("Tinf.p2", "Patient-2 time since infection:",
+  choices = c("-all-", sort(unique(df$Tinf.p2))), 
+  selected = "all")),
+             
+             div(class='span4', selectInput("Ttrans", "Transmission time:",
+  choices = c("-all-", sort(unique(df$Ttrans))), 
+  selected = "all"))
+
+             ))
+)
+
+xyzzy <- reactive({
+    data <- df
+    if (!is.null(input$Tinf.p1) && input$Tinf.p1 != "-all-") {
+        data = data[data$Tinf.p1 == input$Tinf.p1,]
+    } 
+    if (!is.null(input$Tinf.p2) && input$Tinf.p2 != "-all-") {
+        data = data[data$Tinf.p2 == as.numeric(input$Tinf.p2),]
+    } 
+    if (!is.null(input$Ttrans) && input$Ttrans != "-all-") {
+        data = data[data$Ttrans == as.numeric(input$Ttrans),]
+    } 
+    data
+})
+
+# given the data under a point, return an HTML string for display under the mouse
+tooltipString <- function(x) {
+    if (is.null(x)) return(NULL)
+    print(x)
+    row <- df[df$id == x$id,]
+    print(row)
+    paste0(names(row), ": ", format(row), collapse = "<br />")
+    
+}
+
+```
+
+
+```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE}
+
+
+ggvisOutput('distances')
+invisible(reactive({
+    data <- xyzzy()
+    head(data)
+    data %>% ggvis(~Tinf.p1, ~exp.wdist, key:= ~id) %>% layer_points()  %>%
+         scale_numeric("x", domain = c(min(df$Tinf.p1), max(df$Tinf.p1)), nice = FALSE) %>%
+    add_axis("x", title = "Patient-1 time since infection(generations)") %>%
+    add_axis("y", title = "Weighted Hamming distance") %>%
+    add_tooltip(tooltipString, "hover") 
+   })   %>% bind_shiny('distances'))
+
+
+
+```
+
+
+
+
+Mean distance of consensus sequence at MRCA from actual founding sequence, segregated by molecular clock model.
+```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE, results='hide'}
+    p <- ggplot(df, aes(x=clock, y=mean)) +
+         geom_boxplot() +
+         ylab('Mean distance (mismatches)') +
+         xlab('molecular clock')
+    p <- p + ggtitle("Average distance\n- inferred sequence to actual founder -\nby molecular clock") + 
+         theme(plot.title = element_text(lineheight=.8, face="bold"))
+
+print(p)
+
+
+```

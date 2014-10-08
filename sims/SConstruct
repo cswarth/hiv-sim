@@ -1,3 +1,6 @@
+#!/usr/bin/env scons
+# -*- coding: utf-8 -*-
+
 ''' 
 
 Scons file for driving Nestly to create a hierachy of directories
@@ -54,10 +57,14 @@ env['venv'] = '../venv'
 env.PrependENVPath('PATH', os.path.join(env['venv'], 'bin'))
 
 # build the HIV evolutionary history from which we will sample
-sequences = env.Command('hivsim.fa',
-                        [ "../patient1_santa.xml", env['SANTAJAR'] ],
-                        [ "java -jar ${SANTAJAR} ${SOURCES[0]}",
-                          Move('${TARGET}', "patient1.fa")])[0]
+# the patient #1
+patient1santaconfig = env.Command("patient1_santa_config.xml",
+                       ['../templates/santa_template.xml', '../hiv_pol.fa'],
+                       "mksanta.py  -p patient1 ${SOURCES}   >${TARGET}")[0]
+
+leftsim = env.Command("leftlineage.fa",
+                        [ patient1santaconfig, env['SANTAJAR'] ],
+                        [ "java -jar ${SANTAJAR} ${SOURCES[0]} && mv santa_out.fa ${TARGET}" ])[0]
 
 
 # Sample the right host at various
@@ -66,50 +73,98 @@ sequences = env.Command('hivsim.fa',
 # for each right sister clades,
 # infer ancestral sequence in two ways - 1) by including the left sister clade, and 2) by inferring over just the right sister clade.
 
-# estimate distance from each inferred sequence to actaul root sequence.
+# estimate distance from each inferred sequence to actual root sequence.
+
+n.add('left_branch_length', [100, 300, 500, 700, 1000, 5000, 10000])
 
 
-n.add('left_branch_length', [400])
+## Now get all of the starters.
+n.add('transmission', lambda c: [t for t in [100, 300, 500, 700, 1000, 5000, 10000] if t < c['left_branch_length']])
 
-n.add('right_branch_length', [100, 500, 1000, 10000])
+## Create the SANTA config file to found a long lineage based on a single sequence selected from the 'transmission' generation of the
+## left-hand lineage.
+@w.add_target_with_env(env)
+def rightconfig(env, outdir, c):
+    target = os.path.join(outdir, 'right_config.xml')
+    return env.Command(target,
+                       ['../templates/santa_template.xml', leftsim],
+                       "mksanta.py  -p patient2 -g ${transmission} ${SOURCES} 1  >${TARGET}")
 
-# For each data set, we evaluated both strict and relaxed uncorrelated lognormal clock models. 
-n.add('clock_model', ['relaxed', 'strict'])
+
+## Run SANTA to generate the right-hand lineage based on the 'rightconfig' configuration file created above.
+@w.add_target_with_env(env)
+def rightlineage(env, outdir, c):
+    target = os.path.join(outdir, 'santa_out.fa')
+    config = os.path.abspath(str(c['rightconfig']))
+    env['PWD'] = os.getcwd()
+
+    return env.Command(target,
+                [ c['rightconfig'], env['SANTAJAR'] ],
+                [ "cd ${TARGET.dir} && java -jar ${SANTAJAR} ${PWD}/${SOURCES[0]}"])
 
 
+## Extract the founder sequence from the santa confige file into a FASTA file.
+## This makes it easier for the distance.py script to grab it for comparison.
+@w.add_target_with_env(env)
+def founder(env, outdir, c):
+    founder = os.path.join(outdir, 'founder.fa')
+    return env.Command(founder,
+                [ c['rightconfig']],
+                [ "awk  '/\/sequences/ {p=0; next}; /sequences/ {p=1; next}; p' ${SOURCES[0]} > ${TARGET};"])
+
+
+n.add('right_branch_length', [100, 300, 500, 700, 1000, 5000, 10000])
+
+
+# For each data set, we evaluated both strict and relaxed uncorrelated lognormal clock models.
+# These are captured in the different template files used to build the BEAST configs.
+#
+# See: McCloskey, R. M., Liang, R. H., Harrigan, P. R., Brumme, Z. L.,
+# & Poon, A. F. Y. (2014). An Evaluation of Phylogenetic Methods for
+# Reconstructing Transmitted HIV Variants using Longitudinal Clonal
+# HIV Sequence Data. Journal of Virology, 88(11),
+# 6181–94. doi:10.1128/JVI.00483-14
+
+# n.add('clock_model', ['relaxed', 'strict'])
+n.add('clock_model', ['relaxed'])
+
+
+# create the BEAST config file from sequences extracted from two patient simulations
 @w.add_target_with_env(env)
 def config_beast(env, outdir, c):
     target = os.path.join(outdir, 'beast_in.xml')
     
     return env.Command(target,
-                       [sequences, '../templates/${clock_model}-clock.xml'],
-                       """ mkbeast.py --generations  ${left_branch_length},${right_branch_length} ${SOURCES[1]}  ${SOURCES[0]} >${TARGET}""")[0]
+                       [leftsim, c['rightlineage'],  '../templates/${clock_model}-clock.xml'],
+                       """ mkbeast.py  --template  ${SOURCES[2]} ${SOURCES[0]}:${left_branch_length}  ${SOURCES[1]}:${right_branch_length}  >${TARGET}""")
+
 
 @w.add_target_with_env(env)
 def runbeast(env, outdir, c):
     target = [ os.path.join(outdir, 'ancestralSequences.log'),
                os.path.join(outdir, 'beastout.log'),
-               os.path.join(outdir, 'beastout.trees') ]
+               os.path.join(outdir, 'beastout.trees'),
+	       os.path.join(outdir, 'beastcmd.log') ]
     return env.Command(target,
                        [c['config_beast']],
-                       " beast -working -overwrite -beagle ${SOURCES} ")
-
-
-@w.add_target_with_env(env)
-def analysis(env, outdir, c):
-    return env.Command(os.path.join(outdir, 'distance.csv'),
-                       [os.path.join(outdir, 'ancestralSequences.log'), os.path.join(outdir, 'beastout.log')],
-                       "distance.py ../hiv_pol.fa  ${SOURCES} >${TARGET} ")
-
+                       " beast -working -overwrite -beagle ${SOURCES} >${TARGETS[3]} 2>&1 ")
 
 @w.add_target_with_env(env)
 def mcc(env, outdir, c):
     return env.Command(os.path.join(outdir, 'mcc.tree'),
-                       os.path.join(outdir, 'beastout.trees'),
+                        c['runbeast'][2],
                        "treeannotator ${SOURCES} ${TARGET} ")
+
+
+@w.add_target_with_env(env)
+def distance(env, outdir, c):
+    return env.Command(os.path.join(outdir, 'distance.csv'),
+                       [c['founder'], c['runbeast'][0:2]],
+                       "distance.py  ${SOURCES} >${TARGET} ")
+
 
 
 # aggregate the individual distance files into one single file
 env.Command(['distances.csv'],
-    [i['analysis'] for _, i in w],
+    [i['distance'] for _, i in w],
     'aggregate_distance.r ${SOURCES} >${TARGET}')

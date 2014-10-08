@@ -63,8 +63,9 @@ def render(patients, template, fp):
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(searchpath="/"))
     # Alias str.format to strformat in template
     env.filters['strformat'] = str.format
-    template = env.get_template(template)
-    template.stream(patients=patients,
+    template = env.get_template(os.path.abspath(template))
+    template.stream(
+            patients=patients,
             date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             user=getpass.getuser(),
             command=" ".join(sys.argv),
@@ -74,70 +75,54 @@ def render(patients, template, fp):
     
 def processFasta(datafile, generations=None):
     '''
-    Read sequences from a FASTA file (datafile) and integrate them into a BEAST config (tree).
-    The tree is modified in-place.  
+    Read sequences from a FASTA file (datafile) and create a nested data structure thet organizaes the sequences by patient and sample date.
+    if 'generations' is set (list of strings or list of numbers?), only select sequences from the indicated generations.
     '''
+    patient = defaultdict(dict)
+    
     # define a regex to extract the generation number from the fasta id string
     # we use this to provide tip dates to BEAST.
-    patients = defaultdict(dict)
-    
-    name_regex = re.compile("(?P<patient>^[^_]*)_(?P<generation>.*)_")
-
+    patientId = ""
     with open(datafile, "rU") as handle:
     
         # for each fasta sequence in the data file, create a taxon node and a sequence node.
         for record in SeqIO.parse(handle, "fasta") :
             # extract the patient id and generation from the fasta name.
             fields = record.id.split('|')
-            match = name_regex.search(fields[0])
-            patientId = match.group('patient')
+            subfields = fields[0].split('_')
+            patientId = subfields[0]
+            generationId = subfields[1] if len(subfields) >= 2 else 0
 
-            generationId = match.group('generation')
-
-            # If the user specified '-g' on the command line, only process sequences if they are from one of the
+            # If the user supplied generations, only process sequences if they are from one of the
             # specified generations
             #     otherwise, skip to the next entry.
 
-            if generations and int(generationId) not in generations:
+            if (generations and generations != '') and generationId != generations:
                 continue
             
             sampleDate = startDate
-            sampleDate += timedelta(int(fields[3]))   # each generation is counted as one day!
+            sampleDate += timedelta(int(fields[3]) if len(fields) > 3 else 0)   # each generation is counted as one day!
             sampleDate += timedelta(int(generationId))
-            taxon = {}
-            taxon["id"] = record.id
-            taxon["seq"] = str(record.seq)
-            taxon["date"] = sampleDate
+            taxon = record
 
-            # Create a patient instance if we haven't seen this patient id before
-            # REMIND - perhaps better to store as class variable in Patient class?
-            patient = patients[patientId]
-            if not patient:
-                patient['bydate'] = defaultdict(dict)
-
-            collectiondate = (patient['bydate'])[generationId]
+            collectiondate = patient[generationId]
             if not collectiondate:
                 collectiondate['taxa'] = []
-                collectiondate['date'] = sampleDate.strftime('%d/%m/%Y')
+                collectiondate['date'] = str((sampleDate - startDate).days)
 
             collectiondate['taxa'].append(taxon)
-
-
-            # >patient3_100_2|patient2.fa|400|600
-            #  <sequence identifier>|<parent file>|<parent generation>|<cumulative generation>
-            # the date of this sequence is calculated as,
-            # 	 cumulative generation of parent
-            #  + sampled generation from current patient.
-            #
-
-            
-    return(patients)
+    if (generations and generations != '') and not patient:
+        raise Exception("Did not find any generation matching '{}' in {}".format(generations, datafile))
+    return(patientId, patient)
 
 
 
     
 
 def build_parser():
+    """
+    Build the command-line argument parser.
+    """
     def commaSplitter(str):
         """
         Argparse a comm-seperated list
@@ -150,28 +135,26 @@ def build_parser():
         # return value
         return str.split(',')
 
-    def existing_file(fname):
+    def existing_file(arg):
         """
         Argparse type for an existing file
         """
+        fname,generation = arg.partition(":")[::2]
         if not os.path.isfile(fname):
             raise ValueError("Invalid file: " + str(fname))
-        return fname
+        if generation == '':
+            generation = None
+        return [fname,generation]
 
     parser = argparse.ArgumentParser(description=__doc__)
 
-    parser.add_argument('template', help='templated BEAST XML config'
-            )
+    parser.add_argument('--template', '-t', help='templated BEAST XML config',
+            required=True, dest='template')
     parser.add_argument('--fasta', help='produce a FASTA file (default: produce XML file)',
             action='store_true', default=False, dest='createFasta')
     parser.add_argument('--prefix', help='Specify a prefix for all output log filename',
-            action='store', default="", dest='prefix')
-    parser.add_argument('--generations', help="""Restrict sequences tospecific generations.\n
-            May be a comma-seperated list, e.g. 100,800,1000\n
-            [default: %(default)s]""", type=commaSplitter, default=[])
-    parser.add_argument('datafiles', nargs='*', help='FASTA input', type=existing_file)
-
-
+            default="", dest='prefix')
+    parser.add_argument('datafiles', nargs='+', help='FASTA input', type=existing_file)
 
     return parser
 
@@ -183,18 +166,11 @@ def main(args=sys.argv[1:]):
     '''
 
     parser = build_parser()
-    arguments = parser.parse_args()
-
-    prefix = arguments.prefix
-    createFasta = arguments.createFasta
+    a = parser.parse_args()
     
-    datafiles = arguments.datafiles
-    generations = [int(x) for x in arguments.generations]
+    patients = dict([processFasta(*datafile) for datafile in a.datafiles])
 
-    
-    patients = processFasta(datafiles[0], generations)
-        
-    render(patients, arguments.template, sys.stdout)
+    render(patients, a.template, sys.stdout)
 
 
 
