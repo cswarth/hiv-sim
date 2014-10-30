@@ -3,3 +3,6 @@
 /sims/.sconsign.dblite
 /venv
 *.pyc
+/sims/leftlineage.fa
+/sims/distances.csv
+/sims/patient1_santa_config.xml
