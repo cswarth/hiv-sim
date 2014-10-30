@@ -15,7 +15,7 @@
 		</genome>
 
 		<population>
-			<populationSize>1000</populationSize>
+			<populationSize>1</populationSize>
 			<inoculum>all</inoculum>
 		</population>
 
