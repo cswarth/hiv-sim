@@ -25,12 +25,34 @@ From this single evolutionary lineage, two generations were
  10,0000 of the simulated lineage.  These datasets were used to infer ancestral sequeces for strict and relaxed molecular clock models, resulting in eight BEAST runs in total.
  
 
-```{r echo=FALSE, results='hide'}
+```{r echo=FALSE}
+
+
+# To run this dynamic document,
+# library(shiny)
+# run("dynalysis.Rmd", shiny_args=c(host="140.107.116.67", launch.browser=FALSE))
+
 library(ggplot2)
 library(scales)
 library(plyr)
 library(ape)
 library(ggvis)
+library(Biostrings)
+library(shiny)
+
+# hack to get around missing title function in ggvis
+# http://stackoverflow.com/a/25030002/1135316
+add_title <- function(vis, ..., title = "Plot Title") 
+{
+  add_axis(vis, "x") %>% 
+  add_axis("x", orient = "top", ticks = 0, title = title,
+           properties = axis_props(
+             axis = list(stroke = "white"),
+             labels = list(fontSize = 0),
+             title=list(fontSize = 22)
+           ), ...)
+}
+
 
 tryCatch(
 {
@@ -42,37 +64,103 @@ error=function(e) {
 
 # annotate each row with a unique value that wil be used to track values as graphs change.
 df$id <- 1:nrow(df)
+
+
 ```
 
-```{r, , fig.width=4, fig.height=5, echo = FALSE}
+```{r, fig.width=4, fig.height=5, echo = FALSE}
+
+## The input controls and data frame columns are named as follows:
+##     Tinf.p1 - time since infection, patient 1
+##     Ttrans - time of transmission, along patient 1 timeline
+##     Tinf.p2 - time since infection, patient 2
 
 inputPanel(
-withTags(div(class='row-fluid',
-                 div(class='span4', selectInput("tree.Tinf.p1", "Patient-1 time since infection:",
-                     choices = sort(unique(df$Tinf.p1)))),
-                 div(class='span4', selectInput("tree.Ttrans", "Transmission time:",
-                     choices = sort(unique(df$Ttrans)))),
-                 div(class='span4', selectInput("tree.Tinf.p2", "Patient-2 time since infection:",
-                     choices = sort(unique(df$Tinf.p2))))
-
-             ))
+    selectInput("tree.Tinf.p1", "Patient-1 time since infection:",
+                choices = sort(unique(df$Tinf.p1))),
+    selectInput("tree.Ttrans", "Transmission time:",
+                choices = sort(unique(df$Ttrans))),
+    selectInput("tree.Tinf.p2", "Patient-2 time since infection:",
+                choices = sort(unique(df$Tinf.p2)))
     )
+
+observe({
+    choices = sort(unique( df[df$Tinf.p1 == input$tree.Tinf.p1,]$Ttrans ))
+        updateSelectInput(session, "tree.Ttrans", choices = choices)
+
+})
+
+observe({
+    choices = sort(unique( df[df$Tinf.p1 == input$tree.Tinf.p1 & df$Ttrans == input$tree.Ttrans,]$Tinf.p2 ))
+        updateSelectInput(session, "tree.Tinf.p2", choices = choices)
+
+})
+
 
 
 ```
 
-```{r, , fig.width=4, fig.height=5, echo = FALSE}
-
-
+```{r, fig.width=4, fig.height=5, echo = FALSE}
 
 renderPlot({
+    message("in renderplot")
     fn <- sprintf("../sims/runs/%s/%s/%s/relaxed/mcc.tree", input$tree.Tinf.p1, input$tree.Ttrans, input$tree.Tinf.p2) 
     tree <- read.nexus(fn)  # nexus format
-    plot(tree,root.edge = TRUE, direction = "rightwards", main=fn, cex.main=3, type="cladogram")
+    plot(tree,root.edge = TRUE, direction = "rightwards", main=fn, cex.main=3)
+    add.scale.bar(cex = 0.7, font = 2, col = "red")
+
     box(lwd = 2)
   })
 
 
+
+```
+
+```{r, , fig.width=4, fig.height=5, echo = FALSE}
+
+distance.data <- reactive({
+    if (is.null(input$tree.Tinf.p1) || is.null(input$tree.Ttrans) || is.null(input$tree.Tinf.p2) )
+        return(NULL)
+    log.file <- sprintf("../sims/runs/%s/%s/%s/relaxed/ancestralSequences.log", input$tree.Tinf.p1, input$tree.Ttrans, input$tree.Tinf.p2)
+    founder.file <- sprintf("../sims/runs/%s/%s/founder.fa", input$tree.Tinf.p1, input$tree.Ttrans)
+    if (!all(file.exists(c(log.file, founder.file)))) {
+        message("returning NULL from distance.data")
+        return(NULL)
+    }
+    df <- read.table(log.file, comment="#", sep="\t", header=TRUE, stringsAsFactors=F)
+    founder <- readDNAStringSet(founder.file, use.names=FALSE)
+    nmismatch <- function(x,y) {
+        foo <- function(x,y) {
+            sum(mapply('!=', strsplit(as.character(x),split=''), strsplit(as.character(y),split='')))
+        }
+        mapply(foo, x, y)
+    }
+    nmismatch(founder, df$trait)
+})
+
+# Plot how many times each distance measure is seen in a particular configuration.
+#
+# Each time beast runs, it generates many trees and many inferred ancestral sequences.
+# If we measure the distance from each of these sequences to the founder we can see how diverse a
+# sampling of ancestor sequences beast is generating.
+#
+
+
+ggvisOutput('histdistance')
+invisible(reactive({
+    distance = distance.data()
+    if (is.null(distance)) {
+        data.frame(distance=1:10) %>% ggvis(x = ~distance ) %>% layer_histograms() %>%
+             add_title(title = "Frequency of distance measures") 
+    } else {
+        data.frame(distance) %>% ggvis(x = ~distance ) %>% layer_histograms() %>%
+            add_axis("y",title_offset = 50, properties = axis_props(title=list(fontSize = 18))) %>%
+            add_axis("x",title_offset = 50, properties = axis_props(title=list(fontSize = 18))) %>%
+                add_title(title = sprintf("Frequency of distance measures %s/%s/%s",
+                                          input$tree.Tinf.p1, input$tree.Ttrans, input$tree.Tinf.p2))
+
+    } 
+    })   %>% bind_shiny('histdistance'))
 
 ```
 
@@ -82,23 +170,38 @@ at MRCA of patient2, weighted by tree posterior probability.
 
 ```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE}
 
-
 inputPanel(
-withTags(div(class='row-fluid',
-                 div(class='span4', selectInput("Tinf.p1", "Patient-1 time since infection:",
-  choices = c("-all-", sort(unique(df$Tinf.p1))), 
-  selected = "all")),
-             
-                 div(class='span4', selectInput("Tinf.p2", "Patient-2 time since infection:",
-  choices = c("-all-", sort(unique(df$Tinf.p2))), 
-  selected = "all")),
-             
-             div(class='span4', selectInput("Ttrans", "Transmission time:",
-  choices = c("-all-", sort(unique(df$Ttrans))), 
-  selected = "all"))
+    selectInput("Tinf.p1", "Patient-1 time since infection:",
+                choices = c("-all-",sort(unique(df$Tinf.p1)))),
+    selectInput("Ttrans", "Transmission time:",
+                choices = c("-all-",sort(unique(df$Ttrans)))),
+    selectInput("Tinf.p2", "Patient-2 time since infection:",
+                choices = c("-all-",sort(unique(df$Tinf.p2))))
+    ) # end-inputPanel
 
-             ))
-)
+observe({
+    if (!is.null(input$Tinf.p1) &&  input$Tinf.p1!= "-all-") 
+        choices = c("-all-",sort(unique( df[df$Tinf.p1 == input$Tinf.p1,]$Ttrans )))
+    else
+        choices = c("-all-", sort(unique( df$Ttrans )))
+
+    updateSelectInput(session, "Ttrans", choices = choices)
+
+})
+
+observe({
+    if (!is.null(input$Ttrans) && input$Ttrans != "-all-") {
+        if (!is.null(input$Tinf.p1) && input$Tinf.p1 != "-all-") {
+            choices = c("-all-",sort(unique( df[df$Tinf.p1 == input$Tinf.p1 & df$Ttrans == input$Ttrans,]$Tinf.p2 )))
+        } else {
+            choices = c("-all-",sort(unique( df[df$Ttrans == input$Ttrans,]$Tinf.p2 )))
+        }
+    } else {
+        choices = c("-all-",sort(unique( df$Tinf.p2 )))
+    }
+    updateSelectInput(session, "Tinf.p2", choices = choices)
+})
+
 
 xyzzy <- reactive({
     data <- df
@@ -114,32 +217,37 @@ xyzzy <- reactive({
     data
 })
 
+
+```
+
+
+
+```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE}
+
 # given the data under a point, return an HTML string for display under the mouse
 tooltipString <- function(x) {
     if (is.null(x)) return(NULL)
     print(x)
     row <- df[df$id == x$id,]
+    
     print(row)
-    paste0(names(row), ": ", format(row), collapse = "<br />")
+    paste0("P1 infected period: ", row[['Tinf.p1']], "<br />",
+           "   transmission time: ", row[['Ttrans']], "<br />",
+           "P2 infected period: ", row[['Tinf.p2']])
     
 }
 
-```
-
-
-```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE}
-
-
-ggvisOutput('distances')
+ggvisOutput('scatterplot')
 invisible(reactive({
     data <- xyzzy()
-    head(data)
-    data %>% ggvis(~Tinf.p1, ~exp.wdist, key:= ~id) %>% layer_points()  %>%
-         scale_numeric("x", domain = c(min(df$Tinf.p1), max(df$Tinf.p1)), nice = FALSE) %>%
-    add_axis("x", title = "Patient-1 time since infection(generations)") %>%
-    add_axis("y", title = "Weighted Hamming distance") %>%
-    add_tooltip(tooltipString, "hover") 
-   })   %>% bind_shiny('distances'))
+    data %>% ggvis(~ Tinf.p1 - Ttrans, ~Tinf.p2, key:= ~id, size = ~dist.mean ) %>% layer_points()  %>%
+    add_axis("x", title = "Patient-1 time since transmission(generations)") %>%
+    add_axis("y", title = "Patient-2 time since infection(generations)", title_offset = 50) %>%
+    scale_numeric("x", domain = c(min(df$Tinf.p1), max(df$Tinf.p1)), nice = FALSE) %>%
+    # scale_numeric("y", domain = c(min(df$Tinf.p2), max(df$Tinf.p2)), nice = FALSE) %>%
+    add_title(title = "Average Distance from Founder")
+    # add_tooltip(tooltipString, "hover") 
+   })   %>% bind_shiny('scatterplot'))
 
 
 
@@ -150,7 +258,8 @@ invisible(reactive({
 
 Mean distance of consensus sequence at MRCA from actual founding sequence, segregated by molecular clock model.
 ```{r eval=TRUE, fig.width=6, fig.height=5, echo=FALSE, results='hide'}
-    p <- ggplot(df, aes(x=clock, y=mean)) +
+
+    p <- ggplot(df, aes(x=clock, y=mismatch.mean)) +
          geom_boxplot() +
          ylab('Mean distance (mismatches)') +
          xlab('molecular clock')
@@ -161,3 +270,4 @@ print(p)
 
 
 ```
+
