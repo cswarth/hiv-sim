@@ -1,13 +1,13 @@
 #!/usr/bin/env Rscript
 
-# Aggregte individual distance CSV files into one distance file.
+# Aggregate individual distance files into one distance file.
 #
 # This script expects to be invoked with a bunch of paths to individual
-# distance CSV files.
+# CSV files.
 #
 # e.g. aggregate_distance.r runs/300/100/500/relaxed/distance.csv runs/500/300/1500/relaxed/distance.csv
 #
-# except that I might expect dozens of filenames on the
+# except that one should expect dozens of filenames on the
 # commandline.
 #
 # The directory paths to the distance.csv files are significant!
@@ -18,29 +18,10 @@
 # patient-2
 
 
-
-
-
-
 suppressPackageStartupMessages(library("optparse"))
 
 main <- function(args) {
-    option_list <- list(
-        ## make_option("--normalization", default="area",
-        ##             help = "Function to normalize data, \"quantile\" or \"area\" [default \"%default\"]"),
-        ## make_option("--genefile", default="",
-        ##             help="file containing name genes to monitor. [default \"%default\"]"),
-        ## make_option("--sample", default="0",
-        ##             help="number of genes to sample from genefile. [default \"%default\"]"),
-        ## make_option("--genes", default="",
-        ##             help="gene or genes to monitor. [default \"%default\"]"),
-        ## make_option("--seed", default="1234",
-        ##             help="random seed. [default \"%default\"]"),
-        ## make_option("--restart", default="1",
-        ##             help="restart batch. [default \"%default\"]"),
-        ## make_option("--sqlite", default="ProfileCache.sqlite",
-        ##             help="sqlite database. [default \"%default\"]")
-        )
+    option_list <- list()
 
     # get command line options, if help option encountered print help and exit,
     # otherwise if options not found on command line then set defaults,
