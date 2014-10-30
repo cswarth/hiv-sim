@@ -47,7 +47,7 @@ env.PrependENVPath('PATH', '../bin')
 n = Nest(base_dict={'n_sites': 1000})
 w = SConsWrap(n, 'runs', alias_environment=env)
 
-env['SANTAJAR']= os.path.expanduser('~matsengrp/local/lib/santa.jar')
+env['SANTAJAR']= os.path.abspath('../lib/santa.jar')
 
 ### Add to PATH
 ### We're going to simulate a call to 'source venv/bin/activate' by adding
@@ -64,7 +64,7 @@ patient1santaconfig = env.Command("patient1_santa_config.xml",
 
 leftsim = env.Command("leftlineage.fa",
                         [ patient1santaconfig, env['SANTAJAR'] ],
-                        [ "java -jar ${SANTAJAR} ${SOURCES[0]} && mv santa_out.fa ${TARGET}" ])[0]
+                        [ "java -jar ${SANTAJAR} ${SOURCES[0]}  >/dev/null && mv santa_out.fa ${TARGET} " ])[0]
 
 
 # Sample the right host at various
@@ -78,7 +78,8 @@ leftsim = env.Command("leftlineage.fa",
 n.add('left_branch_length', [100, 300, 500, 700, 1000, 5000, 10000])
 
 
-## Now get all of the starters.
+## Now get all of the transmission points, which must be less than the patient-1 age.
+## (cannot transmit from the future!)
 n.add('transmission', lambda c: [t for t in [100, 300, 500, 700, 1000, 5000, 10000] if t < c['left_branch_length']])
 
 ## Create the SANTA config file to found a long lineage based on a single sequence selected from the 'transmission' generation of the
@@ -86,9 +87,11 @@ n.add('transmission', lambda c: [t for t in [100, 300, 500, 700, 1000, 5000, 100
 @w.add_target_with_env(env)
 def rightconfig(env, outdir, c):
     target = os.path.join(outdir, 'right_config.xml')
+    env['ENV']['SLURM_JOB_NAME'] = 'mksanta_' + str(c['transmission'])
     return env.Command(target,
                        ['../templates/santa_template.xml', leftsim],
-                       "mksanta.py  -p patient2 -g ${transmission} ${SOURCES} 1  >${TARGET}")
+                       # mksanta -p <prefix>   -g <generation>   <template_file>   <sequences_file>    <#founders>
+                       "mksanta.py  -p patient2 -g ${transmission} ${SOURCES} 1   >${TARGET}")
 
 
 ## Run SANTA to generate the right-hand lineage based on the 'rightconfig' configuration file created above.
@@ -100,10 +103,10 @@ def rightlineage(env, outdir, c):
 
     return env.Command(target,
                 [ c['rightconfig'], env['SANTAJAR'] ],
-                [ "cd ${TARGET.dir} && java -jar ${SANTAJAR} ${PWD}/${SOURCES[0]}"])
+                [ "cd ${TARGET.dir} && srun --output=/dev/null java -jar ${SANTAJAR} ${PWD}/${SOURCES[0]}"])
 
 
-## Extract the founder sequence from the santa confige file into a FASTA file.
+## Extract the founder sequence from the santa config file into a FASTA file.
 ## This makes it easier for the distance.py script to grab it for comparison.
 @w.add_target_with_env(env)
 def founder(env, outdir, c):
@@ -144,10 +147,10 @@ def runbeast(env, outdir, c):
     target = [ os.path.join(outdir, 'ancestralSequences.log'),
                os.path.join(outdir, 'beastout.log'),
                os.path.join(outdir, 'beastout.trees'),
-	       os.path.join(outdir, 'beastcmd.log') ]
+               os.path.join(outdir, 'beastcmd.log') ]
     return env.Command(target,
                        [c['config_beast']],
-                       " beast -working -overwrite -beagle ${SOURCES} >${TARGETS[3]} 2>&1 ")
+                       " srun beast -working -overwrite -beagle ${SOURCES} >${TARGETS[3]} 2>&1 ")
 
 @w.add_target_with_env(env)
 def mcc(env, outdir, c):
