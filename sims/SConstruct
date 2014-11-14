@@ -82,8 +82,8 @@ n.add('left_branch_length', [100, 300, 500, 700, 1000, 5000, 10000])
 ## (cannot transmit from the future!)
 n.add('transmission', lambda c: [t for t in [100, 300, 500, 700, 1000, 5000, 10000] if t < c['left_branch_length']])
 
-## Create the SANTA config file to found a long lineage based on a single sequence selected from the 'transmission' generation of the
-## left-hand lineage.
+## Create the SANTA config file to found a lineage based on a single sequence selected from the 'transmission' generation of the
+## donor lineage.
 @w.add_target_with_env(env)
 def rightconfig(env, outdir, c):
     target = os.path.join(outdir, 'right_config.xml')
