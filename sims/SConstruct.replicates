@@ -45,7 +45,7 @@ env = Environment(ENV=environ)
 env.PrependENVPath('PATH', '../bin')
 
 n = Nest(base_dict={'n_sites': 1000})
-w = SConsWrap(n, 'runs', alias_environment=env)
+w = SConsWrap(n, 'replicates', alias_environment=env)
 
 env['SANTAJAR']= os.path.abspath('../lib/santa.jar')
 
@@ -59,15 +59,24 @@ env['LONGEVITY'] = 25000
 env['venv'] = '../venv'
 env.PrependENVPath('PATH', os.path.join(env['venv'], 'bin'))
 
-# build the HIV evolutionary history from which we will sample
-# the patient #1
-donorsantaconfig = env.Command("donor_santa_config.xml",
-                       ['../templates/santa_template.xml', '../hiv_pol.fa'],
-                       "mksanta.py  -p patient1 ${SOURCES}   >${TARGET}")[0]
+n.add('replicate', range(0,10))
 
-donorlineage = env.Command("donorlineage.fa",
-                        [ donorsantaconfig, env['SANTAJAR'] ],
-                        [ "java -jar ${SANTAJAR} -longevity=${LONGEVITY} ${SOURCES[0]}  && mv santa_out.fa ${TARGET} " ])[0]
+@w.add_target_with_env(env)
+def donorconfig(env, outdir, c):
+    target = os.path.join(outdir, 'donorconfig.xml')
+    env['ENV']['SLURM_JOB_NAME'] = 'mksanta_' + str(c['replicate'])
+    return env.Command(target,
+                       ['../templates/santa_template.xml',  '../hiv_pol.fa'],
+                       # usage: mksanta -p <prefix> <template_file> <sequences_file>    <#founders>
+                       "mksanta.py  -p donor ${SOURCES}  >${TARGET}")
+
+@w.add_target_with_env(env)
+def donorlineage(env, outdir, c):
+    target = os.path.join(outdir, "santa_out.fa")
+    env['PWD'] = os.getcwd()
+    return env.Command(target,
+                [ c['donorconfig'], env['SANTAJAR'] ],
+                [ "cd ${TARGET.dir} && srun --output=/dev/null java -jar ${SANTAJAR} -longevity=${LONGEVITY} ${PWD}/${SOURCES[0]}"])
 
 
 # Sample the right host at various
@@ -87,7 +96,7 @@ n.add('transmission', [300, 700])
 def founder(env, outdir, c):
     founder = os.path.join(outdir, 'founder.fa')
     return env.Command(founder,
-                [ donorlineage ],
+                [ c['donorlineage'] ],
                 [ "select_seq.py ${SOURCES[0]} ${transmission} 1 > ${TARGET};"])
 
 
@@ -107,47 +116,18 @@ def recipientconfig(env, outdir, c):
 @w.add_target_with_env(env)
 def recipientlineage(env, outdir, c):
     target = os.path.join(outdir, 'santa_out.fa')
-    config = os.path.abspath(str(c['recipientconfig']))
     env['PWD'] = os.getcwd()
-
     return env.Command(target,
                 [ c['recipientconfig'], env['SANTAJAR'] ],
                 [ "cd ${TARGET.dir} && srun --output=/dev/null java -jar ${SANTAJAR} -longevity=${LONGEVITY} ${PWD}/${SOURCES[0]}"])
 
 
 
-# calculate timepoints (generations), relative to transmission event, at which to sample the donor after the transmisson event.
-
-# Goint into the routine, we have already created a donor lineage for some large number of
-# generations
-#
-# Start with a geometric series of timepoints [a*(r^i) for i in 0..9].
-# Constrain these values to fall on 100-generation boundaries where the lineage has been previously sampled.
-# Cutoff the series at the maximum longevity.
-# Finally add in a couple of special timepoints at the beginning.
-#
-# If tranmission happens at 700, and 
-def calculate_donor_samples(c):
-    a=100
-    r=2.5
-    series = [a*pow(r,i) for i in range(0,10)]
-    series = [int(round(v/100)*100) for v in series]
-    samples = list(set([min(t, env['LONGEVITY']-c['transmission']) for t in series]))
-    samples =  [ "nodonor", 0 ] + samples
-    return(samples)
 
 # donor time since transmission
-n.add('donor_time_since_transmission', calculate_donor_samples)
+n.add('donor_time_since_transmission', [ "nodonor", 0, 100 ])
 
-def calculate_recipient_samples(c):
-    a=100
-    r=2.5
-    geom_series = [int(round(a*pow(r,i)/100)*100) for i in range(0,10)]
-    samples = [min(t, env['LONGEVITY']) for t in geom_series]
-    samples = list(set(samples))
-    return(samples)
-    
-n.add('recipient_time_since_transmission', calculate_recipient_samples)
+n.add('recipient_time_since_transmission', [100,  500, 1000, 5000, 10000, 20000])
 
 
 # For each data set, we evaluated both strict and relaxed uncorrelated lognormal clock models.
@@ -168,7 +148,7 @@ n.add('clock_model', ['relaxed'])
 def config_beast(env, outdir, c):
     target = os.path.join(outdir, 'beast_in.xml')
     if env['donor_time_since_transmission'] != "nodonor":
-        donor = str(donorlineage)
+        donor = str(c['donorlineage'][0])
         donor += ":" + str(env['transmission']+env['donor_time_since_transmission'])
     else:
         donor = ""
@@ -176,7 +156,7 @@ def config_beast(env, outdir, c):
     cmd = ("mkbeast.py  --template  ${SOURCES[0]} " + donor + " ${SOURCES[2]}:${recipient_time_since_transmission}  >${TARGET}")
 
     return env.Command(target,
-                       [ '../templates/${clock_model}-clock.xml', donorlineage, c['recipientlineage']],
+                       [ '../templates/${clock_model}-clock.xml', c['donorlineage'], c['recipientlineage']],
                        cmd)
 
 

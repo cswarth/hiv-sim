@@ -15,10 +15,10 @@
 		</genome>
 
 		<population>
-			<populationSize>1</populationSize>
+			<populationSize>$population</populationSize>
 			<inoculum>all</inoculum>
 		</population>
-
+		<populationType>staticPopulation</populationType>
 		<fitnessFunction>
 		
 		</fitnessFunction>
@@ -44,7 +44,7 @@
 
 		<epoch>
 		  <name>initial</name>
-		  <generationCount>10000</generationCount>			
+		  <generationCount>$longevity</generationCount>			
 		</epoch>
 		
 		<samplingSchedule>

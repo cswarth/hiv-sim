@@ -14,7 +14,6 @@ from __future__ import print_function
 
 import jinja2
 
-import re
 from Bio import SeqIO
 from collections import defaultdict
 import getpass
@@ -23,6 +22,7 @@ from datetime import datetime, date, timedelta
 import sys
 import argparse
 import os.path
+import re
 
 def build_parser():
     """
@@ -54,11 +54,8 @@ def build_parser():
             action='store', default='patient', dest='prefix')
     parser.add_argument('-d', '--date', help='dont really know what this does...',
             action='store', default='', dest='sampledate')
-    parser.add_argument('-g', '--generation', help='generation to sample from',
-            action='store', default=None, dest='generation')
     parser.add_argument('template', type=argparse.FileType('r'), help='BEAST config template file')
-    parser.add_argument('fastaFile', type=argparse.FileType('r'), help='file of sequences (in FASTA format)')
-    parser.add_argument('count', nargs='?', type=int, default=-1, help='number of sample sequences to extract')
+    parser.add_argument('fasta', type=argparse.FileType('r'), help='file of sequences (in FASTA format)')
 
     return parser
 
@@ -73,59 +70,36 @@ def main():
     parser = build_parser()
     a = parser.parse_args()
 
-    sourcefile = a.fastaFile.name
+    sourcefile = a.fasta.name
     
     # find the sequences from the chosen <generation> and
-    # randomly choose <count> of them to pass on to the next generation
-    data = []
     cumulativeGeneration = 0
-    with a.fastaFile as fp:
-        for record in SeqIO.parse(fp, "fasta") :
-            # import pdb; pdb.set_trace()
 
-            fields = record.id.split('|')
-            subfields = fields[0].split('_')
-            patient = subfields[0]
-            generation = subfields[1] if len(subfields) >= 2 else None
-            
-            if not a.generation or generation == a.generation:
-                if a.count != 0:
-                    # Randomly choose a sequence.  For now
-                    # assume they are already randomy sorted and choose from the
-                    # order in which they are presented.
-                    #
-                    # need to assert the all the lengths are the same....
-                    # if not, we will have to align all the sequences to one another...
-                    ll = len(record.seq)
-                    data.append(record)
-                    a.count -= 1
-                    cumulativeGeneration = int(fields[3]) if len(fields) >=3 else 0
+    records = list(SeqIO.parse(a.fasta, "fasta"))
 
-            if a.count == 0:
-                # break out when we have collected all the sequences we need
-                break
-
-
-
-    # compose a label to indicate where the starting population from the sample
-    a.generation = 0 if not a.generation else a.generation
-    cumulativeGeneration += int(a.generation)
+    # extract generation and cuulative generation from each sequence.
+    generation = set([int(r.id.split('|')[0].split('_')[1]) for r in records])
+    cumulative = set([int(r.id.split('|')[3]) for r in records])
+    assert(len(generation) == 1)
+    assert(len(cumulative) == 1)
+    cumulative = cumulative.pop()
+    generation = generation.pop()
     
-    label= "{}_%g_%s|{}|{}|{}".format(a.prefix, os.path.basename(sourcefile), a.generation, cumulativeGeneration)
+    # compose a label to indicate where the starting population from the sample
+    cumulativeGeneration = cumulative + generation
+    label= "{}_%g_%s|{}|{}|{}".format(a.prefix, os.path.basename(sourcefile), generation, cumulativeGeneration)
 
     with sys.stdout as fp:
         env = jinja2.Environment(loader=jinja2.FileSystemLoader(searchpath="/"))
         # Alias str.format to strformat in template
         env.filters['strformat'] = str.format
         template = env.get_template(os.path.abspath(a.template.name))
-        template.stream(data=data,
+        template.stream(data=records,
                 label=label,
                 date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 user=getpass.getuser(),
                 command=" ".join(sys.argv),
                 workdir=os.getcwd()).dump(fp)
-
-
 
     
 if __name__ == "__main__":

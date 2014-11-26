@@ -2,8 +2,8 @@
 
 # We need to build our own virtual env, including all of numpy and
 # scipy, because the existing python environment under
-# ~matsengrp/local is too old to be seful.  In particular there are
-# routines used when calculting sums of log probabilities that are not
+# ~matsengrp/local is too old to be useful.  In particular there are
+# routines used when calculating sums of log probabilities that are not
 # available under the old verion of scipy installed in ~matsengrp.
 
 

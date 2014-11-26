@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 # read in a set of sequences as output from beast an caclulate consensus sequences.
 #
