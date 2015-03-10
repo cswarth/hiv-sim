@@ -1,0 +1,201 @@
+#!/usr/bin/env scons
+# -*- coding: utf-8 -*-
+
+''' 
+
+Exploring the effect of mutation rate on HIV
+
+Scons file for driving Nestly to create a hierachy of directories
+and control files that can explore various paramter settings of Santa
+and BEAST.
+
+The main idea is to have a hierarchy of directories that vary the
+branch lengths of simulated sibling HIV clades.  In addition for each
+pair of siblings, we want to vary BEAST parameters to explore the
+effect of various evolutionary clock models on the inferrence of
+ancestral sequences.
+
+We start with a single sequence fro mwhich we simulat multiple
+generations of HIV evolution.  We sample this evolutionaery history at
+a certain timepoint, say at generation 400, to create patient1.  Then
+we sample the same evolutionary history at a several different
+timepoints, say 100, 500, 1000, and 10000 generations, to create
+patient2.  Next we create a BEAST configuration that combines the
+samples from patient1 ad patient2 and ask it to infer the ancestral
+sequence at the MRCA of these sequences.
+
+'''
+
+
+
+# Simulations for lcfit
+import os
+import os.path
+
+from nestly import Nest
+import nestly
+from nestly.scons import SConsWrap
+from SCons.Script import Environment
+
+environ = os.environ.copy()
+
+for k in ('SLURM_NTASKS', 'SLURM_NPROCS', 'SLURM_NNODES',
+          'SLURM_NTASKS_PER_CORE', 'SLURM_CPUS_PER_TASK', 'SLURM_EXCLUSIVE'):
+    environ[k] = '1'
+environ['SLURM_TIMELIMIT'] = '0-6'
+
+env = Environment(ENV=environ)
+env.PrependENVPath('PATH', '../bin')
+
+n = Nest(base_dict={'n_sites': 1000})
+w = SConsWrap(n, 'mutation', alias_environment=env)
+
+env['SANTAJAR']= os.path.abspath('../lib/santa.jar')
+
+# maximum number of generations to run a simulation.
+env['longevity'] = 25000
+env['population'] = 2000
+env['seqlen'] = 0   # "0" indicates use all the sequence
+
+### Add to PATH
+### We're going to simulate a call to 'source venv/bin/activate' by adding
+### 'venv/bin' to the head of the path.
+# if you don't have a virtual environment yet, you can build it with 'make venv'
+#env['venv'] = '../venv'
+#env.PrependENVPath('PATH', os.path.join(env['venv'], 'bin'))
+
+n.add('replicate', range(0,4))
+
+# SANTA muttion rate is expressed in substitutions per nucleotide per generation (s/n/g)
+# These rates below are in substitutions per nucleotide per cell infection (s/n/c)
+# which should be compatible.  Who knows what an HIV "generation" is...
+# J Virol. 2010 Oct;84(19):9733-48. doi: 10.1128/JVI.00694-10. Epub 2010 Jul 21.
+
+n.add('mutation', ["2.5E-6", "2.5E-5", "2.5E-4"])
+
+@w.add_target_with_env(env)
+def donorfounder(env, outdir, c):
+    target = os.path.join(outdir, 'hiv_pol_{}.fa'.format(env['seqlen']))
+    cut = "--cut 1:${seqlen}" if env['seqlen'] > 0 else ""
+    cmd = "~matsengrp/local/bin/seqmagick convert "+cut+" ../hiv_pol.fa ${TARGET}"
+    return env.Command(target,
+                       ['../hiv_pol.fa'],
+                       cmd)
+
+@w.add_target_with_env(env)
+def donorconfig(env, outdir, c):
+    target = os.path.join(outdir, 'donorconfig.xml')
+    env['ENV']['SLURM_JOB_NAME'] = 'mksanta_' + str(c['replicate'])
+    return env.Command(target,
+                       ['../templates/santa_template.xml',  c['donorfounder']],
+                       # usage: mksanta -p <prefix> <template_file> <sequences_file>    <#founders>
+                       "mksanta.py  -p donor ${SOURCES}  >${TARGET}")
+
+@w.add_target_with_env(env)
+def donorlineage(env, outdir, c):
+    target = os.path.join(outdir, "santa_out.fa")
+    env['PWD'] = os.getcwd()
+    return env.Command(target,
+                [ c['donorconfig'], env['SANTAJAR'] ],
+                [ "cd ${TARGET.dir} && srun  java -jar ${SANTAJAR} -mutation=${mutation} -population=${population} -longevity=${longevity} ${PWD}/${SOURCES[0]}"])
+
+
+# Sample the right host at various
+# timepoints along its evolution
+
+# for each right sister clades,
+# infer ancestral sequence in two ways - 1) by including the left sister clade, and 2) by inferring over just the right sister clade.
+
+# estimate distance from each inferred sequence to actual root sequence.
+
+# n.add('transmission', [100, 300, 500, 700, 1000, 5000, 10000])
+n.add('transmission', [300, 7000])
+
+## Extract the founder sequence from the santa config file into a FASTA file.
+## This makes it easier for the distance.py script to grab it for comparison.
+@w.add_target_with_env(env)
+def founder(env, outdir, c):
+    founder = os.path.join(outdir, 'founder.fa')
+    return env.Command(founder,
+                [ c['donorlineage'] ],
+                [ "select_seq.py ${SOURCES[0]} ${transmission} 1 > ${TARGET};"])
+
+
+## Create the SANTA config file to found a lineage based on a single sequence selected from the 'transmission' generation of the
+## donor lineage.
+@w.add_target_with_env(env)
+def recipientconfig(env, outdir, c):
+    target = os.path.join(outdir, 'recipientconfig.xml')
+    env['ENV']['SLURM_JOB_NAME'] = 'mksanta_' + str(c['transmission'])
+    return env.Command(target,
+                       ['../templates/santa_template.xml', c['founder']],
+                       # usage: mksanta -p <prefix> <template_file> <sequences_file>    <#founders>
+                       "mksanta.py  -p patient2 ${SOURCES}  >${TARGET}")
+
+
+## Run SANTA to generate the right-hand lineage based on the 'rightconfig' configuration file created above.
+@w.add_target_with_env(env)
+def recipientlineage(env, outdir, c):
+    target = os.path.join(outdir, 'santa_out.fa')
+    env['PWD'] = os.getcwd()
+    return env.Command(target,
+                [ c['recipientconfig'], env['SANTAJAR'] ],
+                [ "cd ${TARGET.dir} && srun --output=/dev/null java -jar ${SANTAJAR} -mutation=${mutation} -population=${population} -longevity=${longevity} ${PWD}/${SOURCES[0]}"])
+
+
+
+
+# donor time since transmission
+n.add('donor_time_since_transmission', [ "nodonor", 0, 100 ])
+
+n.add('recipient_time_since_transmission', [100, 1000, 5000, 10000, 20000])
+
+
+# For each data set, we evaluated both strict and relaxed uncorrelated lognormal clock models.
+# These are captured in the different template files used to build the BEAST configs.
+#
+# See: McCloskey, R. M., Liang, R. H., Harrigan, P. R., Brumme, Z. L.,
+# & Poon, A. F. Y. (2014). An Evaluation of Phylogenetic Methods for
+# Reconstructing Transmitted HIV Variants using Longitudinal Clonal
+# HIV Sequence Data. Journal of Virology, 88(11),
+# 6181–94. doi:10.1128/JVI.00483-14
+
+# n.add('clock_model', ['relaxed', 'strict'])
+n.add('clock_model', ['relaxed'])
+
+
+# create the BEAST config file from sequences extracted from two patient simulations
+@w.add_target_with_env(env)
+def config_beast(env, outdir, c):
+    target = os.path.join(outdir, 'beast_in.xml')
+    if env['donor_time_since_transmission'] != "nodonor":
+        donor = str(c['donorlineage'][0])
+        donor += ":" + str(env['transmission']+env['donor_time_since_transmission'])
+    else:
+        donor = ""
+    cmd = "mkbeast.py  --outgroup ${SOURCES[3]} --template  ${SOURCES[0]} " + donor + " ${SOURCES[2]}:${recipient_time_since_transmission}  >${TARGET}"
+
+    return env.Command(target,
+                       [ '../templates/${clock_model}-clock.xml', c['donorlineage'], c['recipientlineage'], c['donorfounder']],
+                       cmd)
+
+
+@w.add_target_with_env(env)
+def runbeast(env, outdir, c):
+    target = [ os.path.join(outdir, 'ancestralSequences.log') ]
+    return env.Command(target,
+                       c['config_beast'],
+                       "srun beast -working -overwrite -beagle " + os.path.abspath(str(c['config_beast'][0])) + "  ")
+
+
+@w.add_target_with_env(env)
+def distance(env, outdir, c):
+    detail = os.path.join(outdir, 'dist_detail.csv')
+    return env.Command([detail], 
+                       [c['founder'], c['runbeast'][0]],
+                       "distance.py  ${SOURCES} >${TARGETS[0]} ")[0]
+
+# aggregate the individual summary distance files into one single file
+env.Command(['distances.csv'],
+    [i['distance'] for _, i in w],
+    'aggregate_distance.r ${SOURCES} >${TARGET}')
