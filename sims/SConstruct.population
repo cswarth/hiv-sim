@@ -62,7 +62,7 @@ env['population'] = 2000
 #env.PrependENVPath('PATH', os.path.join(env['venv'], 'bin'))
 
 n.add('replicate', range(0,4))
-n.add('population', [50, 500, 1000])
+n.add('population', [50, 500, 1000, 2000])
 
 @w.add_target_with_env(env)
 def donorconfig(env, outdir, c):
@@ -165,27 +165,18 @@ def config_beast(env, outdir, c):
 
 @w.add_target_with_env(env)
 def runbeast(env, outdir, c):
-    target = [ os.path.join(outdir, 'ancestralSequences.log'),
-               os.path.join(outdir, 'beastout.log'),
-               os.path.join(outdir, 'beastout.trees') ]
+    target = [ os.path.join(outdir, 'ancestralSequences.log') ]
     return env.Command(target,
                        c['config_beast'],
                        "srun beast -working -overwrite -beagle " + os.path.abspath(str(c['config_beast'][0])) + "  ")
 
-@w.add_target_with_env(env)
-def mcc(env, outdir, c):
-    return env.Command(os.path.join(outdir, 'mcc.tree'),
-                        c['runbeast'][2],
-                       "treeannotator ${SOURCES} ${TARGET} ")
-
 
 @w.add_target_with_env(env)
 def distance(env, outdir, c):
-    summary = os.path.join(outdir, 'dist_summary.csv')
     detail = os.path.join(outdir, 'dist_detail.csv')
-    return env.Command([summary, detail], 
-                       [c['founder'], c['runbeast'][0:2]],
-                       "distance.py  ${SOURCES} -d ${TARGETS[1]} >${TARGETS[0]} ")[0]
+    return env.Command([detail], 
+                       [c['founder'], c['runbeast'][0]],
+                       "distance.py  ${SOURCES} >${TARGETS[0]} ")[0]
 
 # aggregate the individual summary distance files into one single file
 env.Command(['distances.csv'],
