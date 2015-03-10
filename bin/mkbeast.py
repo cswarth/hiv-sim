@@ -59,13 +59,14 @@ patients = defaultdict()
 
 startDate = datetime.strptime("6/13/1994", "%m/%d/%Y").date()
 
-def render(patients, template, fp):
+def render(patients, outgroup, template, fp):
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(searchpath="/"))
     # Alias str.format to strformat in template
     env.filters['strformat'] = str.format
     template = env.get_template(os.path.abspath(template))
     template.stream(
             patients=patients,
+            outgroup=outgroup,
             date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             user=getpass.getuser(),
             command=" ".join(sys.argv),
@@ -154,6 +155,8 @@ def build_parser():
             action='store_true', default=False, dest='createFasta')
     parser.add_argument('--prefix', help='Specify a prefix for all output log filename',
             default="", dest='prefix')
+    parser.add_argument('--outgroup', help='FASTA files for outgroup sequences',
+            default=None, dest='outgroup', type=argparse.FileType('r'))
     parser.add_argument('datafiles', nargs='+', help='FASTA input', type=existing_file)
 
     return parser
@@ -170,7 +173,9 @@ def main(args=sys.argv[1:]):
     
     patients = dict([processFasta(*datafile) for datafile in a.datafiles])
 
-    render(patients, a.template, sys.stdout)
+    outgroup = list(SeqIO.parse(a.outgroup, "fasta")) if a.outgroup else []
+
+    render(patients, outgroup, a.template, sys.stdout)
 
 
 
