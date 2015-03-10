@@ -159,8 +159,7 @@ n.add('recipient_time_since_transmission', calculate_recipient_samples)
 # HIV Sequence Data. Journal of Virology, 88(11),
 # 6181–94. doi:10.1128/JVI.00483-14
 
-# n.add('clock_model', ['relaxed', 'strict'])
-n.add('clock_model', ['relaxed'])
+n.add('clock_model', ['relaxed'])	# 'strict'
 
 
 # create the BEAST config file from sequences extracted from two patient simulations
