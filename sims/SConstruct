@@ -51,6 +51,7 @@ env['SANTAJAR']= os.path.abspath('../lib/santa.jar')
 
 # maximum number of generations to run a simulation.
 env['LONGEVITY'] = 25000
+env['POPULATION'] = 1000
 
 ### Add to PATH
 ### We're going to simulate a call to 'source venv/bin/activate' by adding
@@ -67,7 +68,7 @@ donorsantaconfig = env.Command("donor_santa_config.xml",
 
 donorlineage = env.Command("donorlineage.fa",
                         [ donorsantaconfig, env['SANTAJAR'] ],
-                        [ "java -jar ${SANTAJAR} -longevity=${LONGEVITY} ${SOURCES[0]}  && mv santa_out.fa ${TARGET} " ])[0]
+                        [ "srun --output=srun.log java -jar ${SANTAJAR} -population=${POPULATION} -longevity=${LONGEVITY} ${SOURCES[0]}  && mv santa_out.fa ${TARGET} " ])[0]
 
 
 # Sample the right host at various
@@ -86,9 +87,11 @@ n.add('transmission', [300, 700])
 @w.add_target_with_env(env)
 def founder(env, outdir, c):
     founder = os.path.join(outdir, 'founder.fa')
+    cmd = ('../bin/fasta_sample.py --fasta-file ${SOURCES[0]} --n-sequences 1 --pattern "_${transmission}_" >${TARGET}')
+
     return env.Command(founder,
                 [ donorlineage ],
-                [ "select_seq.py ${SOURCES[0]} ${transmission} 1 > ${TARGET};"])
+                [ cmd ])
 
 
 ## Create the SANTA config file to found a lineage based on a single sequence selected from the 'transmission' generation of the
@@ -96,7 +99,6 @@ def founder(env, outdir, c):
 @w.add_target_with_env(env)
 def recipientconfig(env, outdir, c):
     target = os.path.join(outdir, 'recipientconfig.xml')
-    env['ENV']['SLURM_JOB_NAME'] = 'mksanta_' + str(c['transmission'])
     return env.Command(target,
                        ['../templates/santa_template.xml', c['founder']],
                        # usage: mksanta -p <prefix> <template_file> <sequences_file>    <#founders>
@@ -112,7 +114,7 @@ def recipientlineage(env, outdir, c):
 
     return env.Command(target,
                 [ c['recipientconfig'], env['SANTAJAR'] ],
-                [ "cd ${TARGET.dir} && srun --output=/dev/null java -jar ${SANTAJAR} -longevity=${LONGEVITY} ${PWD}/${SOURCES[0]}"])
+                [ "cd ${TARGET.dir} && srun --output=srun.log java -jar ${SANTAJAR} -population=${POPULATION} -longevity=${LONGEVITY} ${PWD}/${SOURCES[0]}"])[0]
 
 
 
@@ -127,7 +129,7 @@ def recipientlineage(env, outdir, c):
 # Finally add in a couple of special timepoints at the beginning.
 #
 # If tranmission happens at 700, and 
-def calculate_donor_samples(c):
+def calculate_donor_timepoints(c):
     a=100
     r=2.5
     series = [a*pow(r,i) for i in range(0,10)]
@@ -137,9 +139,9 @@ def calculate_donor_samples(c):
     return(samples)
 
 # donor time since transmission
-n.add('donor_time_since_transmission', calculate_donor_samples)
+n.add('donor_time_since_transmission', calculate_donor_timepoints)
 
-def calculate_recipient_samples(c):
+def calculate_recipient_timepoints(c):
     a=100
     r=2.5
     geom_series = [int(round(a*pow(r,i)/100)*100) for i in range(0,10)]
@@ -147,7 +149,7 @@ def calculate_recipient_samples(c):
     samples = list(set(samples))
     return(samples)
     
-n.add('recipient_time_since_transmission', calculate_recipient_samples)
+n.add('recipient_time_since_transmission', calculate_recipient_timepoints)
 
 
 # For each data set, we evaluated both strict and relaxed uncorrelated lognormal clock models.
@@ -162,20 +164,57 @@ n.add('recipient_time_since_transmission', calculate_recipient_samples)
 n.add('clock_model', ['relaxed'])	# 'strict'
 
 
+# Create a multiple alingment from the sampled sequences.
+# Note you don't hve to do this if all the sequences are the same length, but
+# when inels are involved, you have to align them before caling beast.
+# create_maf = create multiple alignment file
+
+# oh shit, the sampling of sequences is part of the script that builds the beast config file!
+# dumb, dumb, dumb!  I'll have to separate these...
+@w.add_target_with_env(env)
+def donor_sample(env, outdir, c):
+    target = os.path.join(outdir, 'donor.fasta')
+    
+    if env['donor_time_since_transmission'] != "nodonor":
+        cmd = ('../bin/fasta_sample.py --fasta-file ${SOURCES[0]} --n-sequences 10 --pattern "_${donor_time_since_transmission}_" >${TARGET}')
+    else:
+        cmd = ('>${TARGET}')
+
+    return env.Command(target,
+                       [ donorlineage],
+                       cmd)
+
+
+@w.add_target_with_env(env)
+def recipient_sample(env, outdir, c):
+    target = os.path.join(outdir, 'recipient.fasta')
+    
+    cmd = ('../bin/fasta_sample.py --fasta-file ${SOURCES[0]} --n-sequences 10 --pattern "_${recipient_time_since_transmission}_" >${TARGET}')
+
+    return env.Command(target,
+                       [ c['recipientlineage'] ],
+                       cmd)
+
+@w.add_target_with_env(env)
+def multiple_alignment(env, outdir, c):
+    target = os.path.join(outdir, 'sequences.maf')
+    
+    cmd = ('cat ${SOURCES} | muscle -quiet -out ${TARGET}')
+
+    return env.Command(target,
+                       [ c['donor_sample'], c['recipient_sample'] ],
+                       cmd)
+
+
 # create the BEAST config file from sequences extracted from two patient simulations
 @w.add_target_with_env(env)
 def config_beast(env, outdir, c):
     target = os.path.join(outdir, 'beast_in.xml')
-    if env['donor_time_since_transmission'] != "nodonor":
-        donor = str(donorlineage)
-        donor += ":" + str(env['transmission']+env['donor_time_since_transmission'])
-    else:
-        donor = ""
         
-    cmd = ("mkbeast.py  --template  ${SOURCES[0]} " + donor + " ${SOURCES[2]}:${recipient_time_since_transmission}  >${TARGET}")
+    cmd = ("mkbeast.py  --template  ${SOURCES[0]} ${SOURCES[1]}  >${TARGET}")
 
     return env.Command(target,
-                       [ '../templates/${clock_model}-clock.xml', donorlineage, c['recipientlineage']],
+                       [ '../templates/${clock_model}-clock.xml', c['multiple_alignment']],
                        cmd)
 
 
@@ -187,24 +226,33 @@ def runbeast(env, outdir, c):
                os.path.join(outdir, 'beastcmd.log') ]
     return env.Command(target,
                        c['config_beast'],
-                       "srun beast -working -overwrite -beagle " + os.path.abspath(str(c['config_beast'][0])) + " >${TARGETS[3]} 2>&1 ")
+                       "srun --output=srun.log beast -working -overwrite -beagle " + os.path.abspath(str(c['config_beast'][0])) + " >${TARGETS[3]} 2>&1 ")
 
 @w.add_target_with_env(env)
 def mcc(env, outdir, c):
     return env.Command(os.path.join(outdir, 'mcc.tree'),
                         c['runbeast'][2],
-                       "treeannotator ${SOURCES} ${TARGET} ")
+                       'treeannotator ${SOURCES} | nexus2newick.py | tr -d "\047" >${TARGET} ')
 
 
 @w.add_target_with_env(env)
-def distance(env, outdir, c):
-    summary = os.path.join(outdir, 'dist_summary.csv')
-    detail = os.path.join(outdir, 'dist_detail.csv')
-    return env.Command([summary, detail], 
-                       [c['founder'], c['runbeast'][0:2]],
-                       "distance.py  ${SOURCES} -d ${TARGETS[1]} >${TARGETS[0]} ")[0]
+def runprank(env, outdir, c):
+    target = os.path.join(outdir, 'prank.best.anc.fas')
+    env['output'] = os.path.join(outdir, 'prank')
+    cmd = ("prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -once -f=fasta -showanc -showtree -showevents -DNA ")
+    return env.Command(target,
+                       [ c['multiple_alignment'], c['mcc'] ],
+                       cmd)
+
+
+# @w.add_target_with_env(env)
+# def beast_distance(env, outdir, c):
+#     detail = os.path.join(outdir, 'beast_distance.csv')
+#     return env.Command([detail], 
+#                        [c['founder'], c['runbeast'][0]],
+#                        "distance.py  ${SOURCES} >${TARGETS[0]} ")[0]
 
 # aggregate the individual summary distance files into one single file
-env.Command(['distances.csv'],
-    [i['distance'] for _, i in w],
-    'aggregate_distance.r ${SOURCES} >${TARGET}')
+# env.Command(['distances.csv'],
+#     [i['distance'] for _, i in w],
+#     'aggregate_distance.r ${SOURCES} >${TARGET}')

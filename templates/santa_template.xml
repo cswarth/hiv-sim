@@ -25,7 +25,15 @@
 
 		<mutator>
 		  <nucleotideMutator>
-		    <mutationRate>$mutation</mutationRate>
+		    <mutationRate>2.5E-5</mutationRate>
+		    <!-- Negative Binomial
+			 Geometric insertion length distribution (q=0.4, r=1) -->
+		    <indelmodel model="NB">0.4 1</indelmodel>
+		    <insertprob>2.5E-2</insertprob>
+		    <deleteprob>2.5E-2</deleteprob>
+		    <!-- Negative binomial
+			 Pascal insertion length distribution (q=0.2, r=4) -->
+		    <!-- <delete model="NB">0.2 4</delete> -->	
 		    <rateBias>
 	              0.42 2.49 0.29
 	              1.73 0.23 4.73
