@@ -1,0 +1,30 @@
+td.ess-medium {
+  color: #FF9933
+}
+
+td.ess-low {
+  color: #880000;
+}
+
+.result-header {
+  color: #0074CC;
+}
+
+.biggerish {
+  font-size: 150%;
+}
+
+.smallerish {
+  font-size: 75%;
+}
+
+a.undecorated {
+  color: #333348;
+}
+
+/* http://stackoverflow.com/a/13283680/1135316 */
+/* Remove horizontal scrollbar below tabbable interface */
+.tab-content  
+{
+    overflow:hidden;
+}

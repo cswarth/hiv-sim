@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+
+{% block title %}Simulated Transmission Detail{% endblock %}
+{% block pagetitle %}{{ directory }}{% endblock %}
+{% block maincontent %}
+<div class="row">
+    <div class="span12">
+	<div class="tabbable"> <!-- Only required for left/right tabs -->
+	    <ul class="nav nav-tabs">
+		<li class="active"><a href="#tab1" data-toggle="tab">Colorized</a></li>
+		<li><a href="#tab2" data-toggle="tab">Highlight</a></li>
+	    </ul>
+	    <div class="tab-content">
+		<div class="tab-pane active" id="tab1">
+		    {% include "sequence_viewer.html" %}
+		</div>
+		<div class="tab-pane" id="tab2">
+		    {% include "highlight_viewer.html" %}
+		</div>
+	    </div>
+	</div>
+
+	{% set svg_url = url_for('mcc_tree_svg', transmit=transmit, tsi_donor=tsi_donor, tsi_acceptor=tsi_acceptor, clockmodel=clockmodel) %}
+
+	<p>
+	  <a href="{{ svg_url }}" rel="tooltip" data-original-title="Click for a larger version"><img src="{{ svg_url }}" width="800" alt="click for a larger version"/></a>
+	</p>
+
+	os.path.join("../sims/runs", transmit, tsi_donor, tsi_acceptor, clockmodel)
+    </div>
+</div>
+
+{% endblock %}
+

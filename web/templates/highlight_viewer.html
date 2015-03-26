@@ -1,0 +1,87 @@
+<div class="content">
+        <style type="text/css">
+            /* Override some defaults */
+            html, body {
+            }
+            body {
+            }
+            .container > footer p {
+                text-align: center; /* center align it with the container */
+            }
+
+            /* The white background content wrapper */
+            .content {
+                background-color: #fff;
+                padding: 20px;
+                margin: 0 -20px; /* negative indent the amount of the padding to maintain the grid system */
+            }
+
+            .alignment-table {
+                background-color: #ffffff;
+            }
+
+            .alignment-table td.residues {
+                font-family: Monaco,monospace;
+                color: #000;
+  overflow: scroll; overflow-y:hidden;
+            }
+            .alignment-table tr {
+                border: 0px;
+                white-space: nowrap;
+            }
+            .alignment-table td {
+                font-family: Monaco,monospace;
+                border: 0px;
+                margin: 0px;
+                padding: 0px;
+  white-space: nowrap;
+ 
+            }
+            .alignment-table td.sequence-id { 
+  		/* border: 1px  solid black;  */
+		font-family: Monaco,monospace;
+                overflow: hidden;
+                background-color: #DDD;
+            }
+
+            .alignment-table td.residues span.gap {
+                background-color: #CCC;
+            }
+            .alignment-table td.residues span.adenine {
+                background-color: #E00;
+            }
+            .alignment-table td.residues span.guanine {
+                background-color: #EE0;
+            }
+            .alignment-table td.residues span.thymine {
+                background-color: #00E;
+            }
+            .alignment-table td.residues span.cytosine {
+                background-color: #0E0;
+            }
+  </style>
+  <!-- for an example showing how to implement a scrollbar within a table cell, see http://jsfiddle.net/MMeTe/4/ -->
+  <table class="condensed-table alignment-table" style="table-layout: fixed;" width="100%">
+    <tr>
+      <td class="sequence-id" style="width: 8%;" valign="top">
+	{% for sequence in sequences|reverse %}
+	{{ sequence.id }}
+	<br/>
+
+	{% else %}
+	error
+	{% endfor %}
+      </td>
+      <td class="residues" >
+	{% for sequence in highlight|reverse %}
+	{% set grouped = sequence|group_by_base%}
+	
+	{% for c, bases in grouped -%}<span class="{{ c }}">{{bases}}</span>{%-endfor%}
+	<br/>
+	{% else %}
+	no sequences
+	{% endfor %}
+      </td>
+    </tr>
+  </table>
+</div>
