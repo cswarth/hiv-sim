@@ -85,8 +85,16 @@ def guess_figtree_jar_path():
     raise OSError("FigTree jar could not be found.")
 
 
+figtree_params = """
+Begin figtree;
+set tipLabels.fontSize=18;
+set trees.order=true;
+set trees.orderType="decreasing";
+End;
+"""
+
 # Author: cmccoy
-def tree_svg(tree_path, width=2000, height=1200, compress=True,
+def tree_svg(tree_path, width=1200, height=800, compress=True,
         figtree_path=None):
     """
     Generate an SVG from a BEAST nexus file
@@ -94,21 +102,27 @@ def tree_svg(tree_path, width=2000, height=1200, compress=True,
     name = os.path.basename(os.path.splitext(tree_path)[0]) + '.svg'
     if figtree_path is None:
         figtree_path = guess_figtree_jar_path()
-    with tempfile.NamedTemporaryFile() as tf, open(os.devnull) as dn:
-        # Run headless so graphics operations work without a display.
-        # Java memory options taken from the figtree script
-        cmd = ['java', '-client', '-Djava.awt.headless=true', '-Xms64m', '-Xmx512m',
+    print(tree_path)
+    with open(tree_path, 'r') as infile, tempfile.NamedTemporaryFile() as treefile:
+        tree = infile.read()
+        treefile.write(tree)
+        treefile.write(figtree_params)
+        treefile.flush()
+	 
+        with tempfile.NamedTemporaryFile() as tf,open(os.devnull) as dn:
+            # Run headless so graphics operations work without a display.
+            # Java memory options taken from the figtree script
+            cmd = ['java', '-client', '-Djava.awt.headless=true', '-Xms64m', '-Xmx512m',
                '-jar', figtree_path,
                '-graphic', 'SVG', '-width', width, '-height', height,
-               tree_path, tf.name]
-        cmd = map(str, cmd)
-        subprocess.check_call(cmd, stdout=dn)
-
-        if compress:
-            s = StringIO()
-            with gzip.GzipFile(name, 'wb', fileobj=s) as fp:
-                fp.writelines(tf)
-            return s.getvalue()
-        else:
-            return tf.read()
+               treefile.name, tf.name]
+            cmd = map(str, cmd)
+            subprocess.check_call(cmd, stdout=dn)
+            if compress:
+                s = StringIO()
+                with gzip.GzipFile(name, 'wb', fileobj=s) as fp:
+                    fp.writelines(tf)
+                    return s.getvalue()
+            else:
+                return tf.read()
 
