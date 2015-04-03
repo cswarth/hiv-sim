@@ -5,6 +5,7 @@
 from flask import Flask
 from flask import render_template, abort, Response, redirect, url_for, request, g, jsonify
 from flask import Flask, make_response
+import flask
 
 import re
 import os
@@ -18,7 +19,7 @@ from Bio.Alphabet import IUPAC
 
 import filters
 import process
-import util
+from util import *
 
 app = Flask(__name__, template_folder='templates/')
 
@@ -149,7 +150,7 @@ def transmission_detail(transmit, tsi_donor, tsi_acceptor, clockmodel):
     beast.id = 'beast'
     founder.id = 'founder'
     vars['sequences'] = process.multi_align(beast, prank, founder)
-    vars['highlight'] = util.highlight(vars['sequences'])
+    vars['highlight'] = highlight(vars['sequences'])
     
     return render_template('transmission_detail.html', **vars)
 
@@ -168,55 +169,213 @@ def get_directory_structure(rootdir):
         parent[folders[-1]] = subdir
     return dir
 
+from bokeh.embed import components
+from bokeh.plotting import figure
+from bokeh.resources import INLINE
+from bokeh.resources import CDN
+from bokeh.templates import RESOURCES
+from bokeh.util.string import encode_utf8
 
 
-@app.route("/simple.png")
-def simple():
-    import datetime
-    import StringIO
-    import random
- 
-    from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-    from matplotlib.figure import Figure
-    from matplotlib.dates import DateFormatter
- 
-    fig=Figure()
-    ax=fig.add_subplot(111)
-    x=[]
-    y=[]
-    now=datetime.datetime.now()
-    delta=datetime.timedelta(days=1)
-    for i in range(10):
-        x.append(now)
-        now+=delta
-        y.append(random.randint(0, 1000))
-    ax.plot_date(x, y, '-')
-    ax.xaxis.set_major_formatter(DateFormatter('%Y-%m-%d'))
-    fig.autofmt_xdate()
-    canvas=FigureCanvas(fig)
-    png_output = StringIO.StringIO()
-    canvas.print_png(png_output)
-    response=make_response(png_output.getvalue())
-    response.headers['Content-Type'] = 'image/png'
-    return response
+colors = {
+    'Black': '#000000',
+    'Red':   '#FF0000',
+    'Green': '#00FF00',
+    'Blue':  '#0000FF',
+}
 
 
-def orderByDistance(t):
-    """
-    Reorder the nodes of a tree in-place.
-    Subtrees with leaves further from the root are placed after 
-    siblings with smaller distance to the leaves.
-    NOTE: this routine modifies the tree IN-PLACE!!
-    """
-    def distance(n):
-        _, d = n.get_farthest_leaf()
-        print(d)
-        return d
+def getitem(obj, item, default):
+    if item not in obj:
+        return default
+    else:
+        return obj[item]
+
+
+@app.route("/test/")
+def polynomial():
+    """ Very simple embedding of a polynomial chart"""
+    # Grab the inputs arguments from the URL
+    # This is automated by the button
+    args = flask.request.args
+
+    # Get all the form arguments in the url with defaults
+    color = colors[getitem(args, 'color', 'Black')]
+    _from = int(getitem(args, '_from', 0))
+    to = int(getitem(args, 'to', 10))
+
+    # Create a polynomial line graph
+    x = list(range(_from, to + 1))
+    fig = figure(title="Polynomial")
+    fig.line(x, [i ** 2 for i in x], color=color, line_width=2)
+
+    # Configure resources to include BokehJS inline in the document.
+    # For more details see:
+    #   http://bokeh.pydata.org/en/latest/docs/reference/resources_embedding.html#module-bokeh.resources
+    plot_resources = RESOURCES.render(
+        js_raw=INLINE.js_raw,
+        css_raw=INLINE.css_raw,
+        js_files=INLINE.js_files,
+        css_files=INLINE.css_files,
+    )
+
+    # For more details see:
+    #   http://bokeh.pydata.org/en/latest/docs/user_guide/embedding.html#components
+    script, div = components(fig, INLINE)
+    html = flask.render_template(
+        'embed.html',
+        plot_script=script, plot_div=div, plot_resources=plot_resources,
+        color=color, _from=_from, to=to
+    )
+    return encode_utf8(html)
+
+from bokeh.plotting import *
+from bokeh.models import HoverTool, TapTool, OpenURL
+from bokeh.models.glyphs import Rect
+
+import bokeh
+import numpy
+import pandas as pd
+from collections import OrderedDict
+import brewer2mpl
+
+measures = {
+    'prank':'PRANK',
+    'beast':'BEAST',
+    'ratio':'Prank / beast ratio',
+    'control':'Control'
+}
+
+
     
-    # preorder traversal of the tree, ordering children by number of descendants
-    for node in t.traverse("preorder"):
-        # sort the children in the desired order
-        node.children = sorted(node.children, key=distance)
+@app.route("/prank")
+def prank():
+    data = pd.io.parsers.read_csv('../sims/distances.tsv', sep='\t')
+
+    # split the 'dir' column into three separate columns
+    s = data['dir'].str.split('/').apply(pd.Series)
+    s.drop([0,4], axis=1, inplace=True)
+    s.rename(columns={1:'xmit',2:'dtsi',3:'rtsi'},inplace=True)
+    data = data.join(s).drop(data.columns[0], axis=1)
+
+    # save the possible values for the tramission event
+    xmit_events = sorted(data.xmit.unique())
+    
+    # Grab the inputs arguments from the URL
+    args = flask.request.args
+
+    # Get all the form arguments in the url with defaults
+    measure = getitem(args, 'measure', 'beast')
+    transmission = getitem(args, 'event', xmit_events[0])
+    print("transmission = {}".format(transmission))
+    data = data[data.xmit == transmission ]
+
+    # use colorbrewer to come up with a nice selction of colors to use
+    blues = brewer2mpl.get_map('Blues', 'sequential', 9).hex_colors
+    reds = brewer2mpl.get_map('Reds', 'sequential', 9).hex_colors
+
+    colors = reds
+    data['ratio'] = data.prank/data.beast
+
+    # map the range of scores into evenly divided bins across the color range
+    v = data[measure].tolist()
+    bins = numpy.linspace(*minmax(v)+(len(colors),))
+    digitized = numpy.digitize(v, bins)
+    print(set(digitized))
+    
+    # calculate the rank of the beast scores
+    temp = data.beast.argsort()
+    rbeast = numpy.empty(len(temp), int)
+    rbeast[temp] = numpy.arange(len(temp))
+
+    # calculate the rank of the prank scores
+    temp = data.prank.argsort()
+    rprank = numpy.empty(len(temp), int)
+    rprank[temp] = numpy.arange(len(temp))
+
+    print(len(data.index))
+    # A "ColumnDataSource" is like a dict, it maps names to columns of data.
+    # These names are not special we can call the columns whatever we like.
+    source = ColumnDataSource(
+        data=dict(
+            donor = data.dtsi,
+            recipient = data.rtsi,
+            color = [colors[i-1] for i in digitized],
+            dtime_transmission = data.dtsi,
+            dtime_infection = data.rtsi,
+            transmission = data.xmit,
+            prank = data.prank, 
+            beast=data.beast,
+            n=len(data),
+            rprank=rprank,
+            rbeast=rbeast
+        )
+    )
+
+    # We need a list of the categorical coordinates
+    compare_mixed = lambda x: int(x) if is_number(x) else float("inf")
+    x_range = sorted(data.dtsi.unique(), key=compare_mixed)
+    #x_range = sorted(list(set(data['dtsi'].tolist())), key=compare_mixed)
+
+    y_range = sorted(data.rtsi.unique(), key= lambda x: int(x))
+    #y_range = sorted(list(set(data['rtsi'].tolist())), key= lambda x: int(x))
+
+    tooltips = OrderedDict([
+        ("tranmission / donor / recipient", "@transmission / @donor / @recipient"),
+        ("PRANK","@prank - @rprank"),
+        ("BEAST","@beast - @rbeast")
+    ])
+    url = "/runs/@transmission/@donor/@recipient/relaxed/"
+
+    tap = TapTool(action=OpenURL(url=url))
+    hover = HoverTool(tooltips=tooltips)
+
+    fig = figure(title="{} score".format(measure),
+                 x_range=x_range, y_range=y_range,
+                 x_axis_location="below", plot_width=800, plot_height=600,
+                 toolbar_location="left", tools=[tap,hover])
+
+    # Prevent the TapTool from highlighting the selected tile
+    # https://groups.google.com/a/continuum.io/d/msg/bokeh/ytxc1fQ_6nE/nYIOtzvi1TgJ
+    # rect = Rect(x='donor', y='recipient', width=1, height=1, fill_color='color', line_color=None, legend="foo")
+    # fig.add_glyph(source, rect, nonselection_glyph=rect)
+
+    #fig.rect(source=source, x='donor', y='recipient', width=1, height=1, fill_color='color', line_color=None)
+    fig.rect(source=source, 
+             x='donor', y='recipient', width=.97, height=.97, fill_color='color', line_color=None)
+    
+    fig.xaxis.axis_label="Donor generations since transmission"
+    fig.yaxis.axis_label="Recipient generations since infection"
+
+    # # and add the legend just next to the data
+    # x, y = int(x_range[0]), int(y_range[0])
+    # for i,color in enumerate(reds):
+    #     fig.rect([x], [y], width=100, height=100, color=color, 
+    #              x_range=[0,1], 
+    #              y_range=[0,1])
+    #     #fig.text([x], [y], text=area, angle=0, text_font_size="8pt", text_align="center", text_baseline="middle")
+    #     y = y + 1000
+
+
+    
+    # Configure resources to include BokehJS inline in the document.
+    # For more details see:
+    #   http://bokeh.pydata.org/en/latest/docs/reference/resources_embedding.html#module-bokeh.resources
+    plot_resources = RESOURCES.render(
+        js_raw=CDN.js_raw,
+        css_raw=CDN.css_raw,
+        js_files=CDN.js_files,
+        css_files=CDN.css_files,
+    )
+
+    script, div = components(fig, INLINE)
+    template_vars = dict(
+        plot_script=script, plot_div=div, plot_resources=plot_resources,
+        xmit_events = xmit_events, measures=measures, selected_measure=measures[measure])
+
+    html = flask.render_template('embed_bokeh.html', **template_vars)
+    return encode_utf8(html)
+    
 
 @app.route('/figtree/<transmit>/<tsi_donor>/<tsi_acceptor>/<clockmodel>/mcc.svg')
 def mcc_tree_svg(transmit, tsi_donor, tsi_acceptor, clockmodel):
@@ -227,30 +386,10 @@ def mcc_tree_svg(transmit, tsi_donor, tsi_acceptor, clockmodel):
 
     return resp
  
-@app.route('/ete/<transmit>/<tsi_donor>/<tsi_acceptor>/<clockmodel>/mcc.svg')
-def mcc_ete_tree_svg(transmit, tsi_donor, tsi_acceptor, clockmodel):
-    # tree = process.tree_svg(os.path.join("../sims/runs", transmit, tsi_donor, tsi_acceptor, clockmodel, 'mcc.tree'), compress=False)
-    # resp = make_response(tree)
-    # resp.headers['Content-Type'] = 'image/svg+xml'
-    # resp.headers['Content-Encoding'] = 'gzip'
-    resp = None
-    from ete2 import Tree
-    import tempfile
-
-    treefile = os.path.join("../sims/runs", transmit, tsi_donor, tsi_acceptor, clockmodel, 'mcc.tree')
-    with open(treefile) as tf:
-        tree = Tree(tf.read())
-    orderByDistance(tree)
-    
-    svg, _ = tree.render("%%return", w=6.5, h=4, units="in", dpi=80)
-    resp = make_response(svg)
-    resp.headers['Content-Type'] = 'image/svg+xml'
-    resp.headers['Content-Encoding'] = 'gzip'
-        
-    return resp
- 
 if __name__ == "__main__":
     # add files to be watched for changes
     # http://stackoverflow.com/a/9511655/1135316
-    extra_files = ["/shared/silo_researcher/Matsen_F/MatsenGrp/working/cwarth/hiv-sim/web/util.py", "/shared/silo_researcher/Matsen_F/MatsenGrp/working/cwarth/hiv-sim/web/process.py", "/shared/silo_researcher/Matsen_F/MatsenGrp/working/cwarth/hiv-sim/web/filters.py"]
+    extra_files = ["/shared/silo_researcher/Matsen_F/MatsenGrp/working/cwarth/hiv-sim/web/util.py",
+                   "/shared/silo_researcher/Matsen_F/MatsenGrp/working/cwarth/hiv-sim/web/process.py",
+                   "/shared/silo_researcher/Matsen_F/MatsenGrp/working/cwarth/hiv-sim/web/filters.py"]
     app.run(host="0.0.0.0", debug=True, extra_files=extra_files)
