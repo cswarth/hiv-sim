@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """With code liberally cribbed from Connor McCoy's 'sidbweb' application.
 
 """
@@ -25,9 +26,6 @@ app = Flask(__name__, template_folder='templates/')
 
 filters.register(app)	# register jinja filters in the app
 
-@app.route('/')
-def index():
-    return app.root_path
 
 def degapify(s):
     return re.sub('[-_]', '', s)
@@ -120,31 +118,30 @@ def prankseq(path):
     return rootnode
 
 
-@app.route('/runs/<transmit>/<tsi_donor>/<tsi_acceptor>/<clockmodel>/')
-def transmission_detail(transmit, tsi_donor, tsi_acceptor, clockmodel):
+@app.route('/runs/<transmit>/<tsi_donor>/<tsi_acceptor>/')
+def transmission_detail(transmit, tsi_donor, tsi_acceptor):
     """
     provide a basic landing page that summarizes the information ina single directory of the simulation hierarchy.
     """
     vars = {}
 
-    founderfile = os.path.join("../sims/runs", transmit, 'founder.fa')
+    founderfile = os.path.join("../sims/runs/replicate_0", transmit, 'founder.fa')
     founder = ''
     with open(founderfile, "rU") as handle:
         founder = SeqIO.parse(handle, "fasta").next()
 
-    prank = prankseq(os.path.join("../sims/runs", transmit, tsi_donor, tsi_acceptor, clockmodel))
-    beast = beastseq(os.path.join("../sims/runs", transmit, tsi_donor, tsi_acceptor, clockmodel))
+    prank = prankseq(os.path.join("../sims/runs/replicate_0", transmit, tsi_donor, tsi_acceptor))
+    beast = beastseq(os.path.join("../sims/runs/replicate_0", transmit, tsi_donor, tsi_acceptor))
 
     vars['transmit'] = transmit
     vars['tsi_donor'] = tsi_donor
     vars['tsi_acceptor'] = tsi_acceptor
-    vars['clockmodel'] = clockmodel
 
     vars['founder'] = str(founder.seq)
     vars['beast'] = str(beast.seq)
     vars['prank'] = str(prank.seq)
     vars['tree'] = 'sometree'
-    vars['directory'] = '/'.join([transmit, tsi_donor, tsi_acceptor, clockmodel])
+    vars['directory'] = '/'.join([transmit, tsi_donor, tsi_acceptor])
 
     prank.id = 'prank'
     beast.id = 'beast'
@@ -245,18 +242,32 @@ measures = {
     'ratio':'Prank / beast ratio',
     'control':'Control'
 }
-
-
     
-@app.route("/prank")
-def prank():
+@app.route("/")
+def index():
     data = pd.io.parsers.read_csv('../sims/distances.tsv', sep='\t')
 
     # split the 'dir' column into three separate columns
     s = data['dir'].str.split('/').apply(pd.Series)
-    s.drop([0,4], axis=1, inplace=True)
-    s.rename(columns={1:'xmit',2:'dtsi',3:'rtsi'},inplace=True)
+    s.drop([0], axis=1, inplace=True)
+    s.rename(columns={1:'replicate',2:'xmit',3:'dtsi',4:'rtsi'},inplace=True)
+    print(s.head())
+    s['replicate'] = s.replicate.str.extract('replicate_(\d+)').astype(int)
+    print(s.head())
+    
     data = data.join(s).drop(data.columns[0], axis=1)
+    print(data.head())
+    data = data.groupby(['xmit', 'dtsi', 'rtsi'])['prank','beast','control'].mean()
+    data.reset_index(inplace=True)
+    print(data.head())
+    #    prank  beast  control  replicate  xmit   dtsi   rtsi
+    # 0  13695  13655     1000          0  1000      0   1600
+    # 1  13535  13585     1000          0  1000      0  25000
+    # 2  13535  13745     1000          0  1000      0    400
+    # 3  13535  13440     1000          0  1000      0   6300
+    # 4  13345  12900    25000          0  1000  24000   1600
+
+    # data.groupby([‘col1’, ‘col2’])[‘col3’].mean()
 
     # save the possible values for the tramission event
     xmit_events = sorted(data.xmit.unique())
@@ -325,7 +336,7 @@ def prank():
         ("PRANK","@prank - @rprank"),
         ("BEAST","@beast - @rbeast")
     ])
-    url = "/runs/@transmission/@donor/@recipient/relaxed/"
+    url = "/runs/@transmission/@donor/@recipient/"
 
     tap = TapTool(action=OpenURL(url=url))
     hover = HoverTool(tooltips=tooltips)
@@ -337,12 +348,11 @@ def prank():
 
     # Prevent the TapTool from highlighting the selected tile
     # https://groups.google.com/a/continuum.io/d/msg/bokeh/ytxc1fQ_6nE/nYIOtzvi1TgJ
-    # rect = Rect(x='donor', y='recipient', width=1, height=1, fill_color='color', line_color=None, legend="foo")
-    # fig.add_glyph(source, rect, nonselection_glyph=rect)
+    rect = Rect(x='donor', y='recipient', width=.97, height=.97, fill_color='color', line_color=None)
+    fig.add_glyph(source, rect, nonselection_glyph=rect)
 
-    #fig.rect(source=source, x='donor', y='recipient', width=1, height=1, fill_color='color', line_color=None)
-    fig.rect(source=source, 
-             x='donor', y='recipient', width=.97, height=.97, fill_color='color', line_color=None)
+    # fig.rect(source=source, 
+    #         x='donor', y='recipient', width=.97, height=.97, fill_color='color', line_color=None)
     
     fig.xaxis.axis_label="Donor generations since transmission"
     fig.yaxis.axis_label="Recipient generations since infection"
@@ -377,9 +387,9 @@ def prank():
     return encode_utf8(html)
     
 
-@app.route('/figtree/<transmit>/<tsi_donor>/<tsi_acceptor>/<clockmodel>/mcc.svg')
-def mcc_tree_svg(transmit, tsi_donor, tsi_acceptor, clockmodel):
-    tree = process.tree_svg(os.path.join("../sims/runs", transmit, tsi_donor, tsi_acceptor, clockmodel, 'mcc.tree'), compress=False)
+@app.route('/figtree/<transmit>/<tsi_donor>/<tsi_acceptor>/mcc.svg')
+def mcc_tree_svg(transmit, tsi_donor, tsi_acceptor):
+    tree = process.tree_svg(os.path.join("../sims/runs/replicate_0", transmit, tsi_donor, tsi_acceptor, 'mcc.tree'), compress=False)
     resp = make_response(tree)
     resp.headers['Content-Type'] = 'image/svg+xml'
     # resp.headers['Content-Encoding'] = 'gzip'

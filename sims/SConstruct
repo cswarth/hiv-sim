@@ -49,9 +49,8 @@ w = SConsWrap(n, 'runs', alias_environment=env)
 
 env['SANTAJAR']= os.path.abspath('../lib/santa.jar')
 
-# maximum number of generations to run a simulation.
-env['LONGEVITY'] = 25000
-env['POPULATION'] = 1000
+env['LONGEVITY'] = 25000	# number of generations to run SANTA simulation.
+env['POPULATION'] = 1000	# static simulated population size
 
 ### Add to PATH
 ### We're going to simulate a call to 'source venv/bin/activate' by adding
@@ -59,6 +58,12 @@ env['POPULATION'] = 1000
 # if you don't have a virtual environment yet, you can build it with 'make venv'
 env['venv'] = '../venv'
 env.PrependENVPath('PATH', os.path.join(env['venv'], 'bin'))
+
+# Function to be called to convert each value to a directory label.
+def replicate(n):
+    return "replicate_"+str(n)
+
+n.add('replicates', range(5), label_func=replicate)
 
 # build the HIV evolutionary history from which we will sample
 # the patient #1
@@ -80,7 +85,7 @@ donorlineage = env.Command("donorlineage.fa",
 # estimate distance from each inferred sequence to actual root sequence.
 
 # n.add('transmission', [100, 300, 500, 700, 1000, 5000, 10000])
-n.add('transmission', [300, 700])
+n.add('transmission', [300, 1000])
 
 ## Extract the founder sequence from the santa config file into a FASTA file.
 ## This makes it easier for the distance.py script to grab it for comparison.
@@ -101,11 +106,11 @@ def recipientconfig(env, outdir, c):
     target = os.path.join(outdir, 'recipientconfig.xml')
     return env.Command(target,
                        ['../templates/santa_template.xml', c['founder']],
-                       # usage: mksanta -p <prefix> <template_file> <sequences_file>    <#founders>
+                       # usage: mksanta -p <prefix> <template_file> <sequences_file> 
                        "mksanta.py  -p patient2 ${SOURCES}  >${TARGET}")
 
 
-## Run SANTA to generate the right-hand lineage based on the 'rightconfig' configuration file created above.
+## Use SANTA to generate the recipient lineage based on the 'recipientconfig' configuration file.
 @w.add_target_with_env(env)
 def recipientlineage(env, outdir, c):
     target = os.path.join(outdir, 'santa_out.fa')
@@ -114,42 +119,86 @@ def recipientlineage(env, outdir, c):
 
     return env.Command(target,
                 [ c['recipientconfig'], env['SANTAJAR'] ],
-                [ "cd ${TARGET.dir} && srun --output=srun.log java -jar ${SANTAJAR} -population=${POPULATION} -longevity=${LONGEVITY} ${PWD}/${SOURCES[0]}"])[0]
+                [ "cd ${TARGET.dir} && srun --output=srun.log java -jar ${SANTAJAR} -population=${POPULATION} -longevity=${LONGEVITY} ${PWD}/${SOURCES[0]} && while [ ! -s ${TARGET.file} ]; do echo waiting for ${TARGET}; sleep 2; done"])[0]
 
 
 
-# calculate timepoints (generations), relative to transmission event, at which to sample the donor after the transmisson event.
-
-# Goint into the routine, we have already created a donor lineage for some large number of
-# generations
+# calculate timepoints (measured in generations) at which to sample the donor
+# and recipient.
 #
-# Start with a geometric series of timepoints [a*(r^i) for i in 0..9].
-# Constrain these values to fall on 100-generation boundaries where the lineage has been previously sampled.
-# Cutoff the series at the maximum longevity.
+# At this point we have already created a long donor lineage, we have
+# identified `transmission` points, and for each transmission point we have
+# created a long recipient lineage founded on a single sequence taken from the
+# donor.  Both donor and recipient lineages have sampled sequences from their
+# populations at every 100 generations.
+#
+# Now we need to pick the timepoints at which to sample both donor and
+# recipient lineages to do founder inference.  We could just pick some static
+# timepoints, but there should be some rationale behind the selection, and the
+# selected timepoints should cover the entire lineage.  Also static points
+# would have to be adjusted by hand if total longevity were to change.
+#
+# Start with a geometric series of timepoints [a*(r^i) for i in 0..n].
+# Constrain these values to fall on 100-generation boundaries where the lineage
+# has been previously sampled.  Cutoff the series at the maximum longevity.
 # Finally add in a couple of special timepoints at the beginning.
 #
-# If tranmission happens at 700, and 
+# Because the donor timepoints are adjusted for tranmission time, we will
+# need a separate series of points for each tramission event.
+#
 def calculate_donor_timepoints(c):
-    a=100
-    r=2.5
-    series = [a*pow(r,i) for i in range(0,10)]
+    a=300	# how fast sampling curve should grow
+    n = 10	# number of points in the series.
+
+    # calculate base of exponent so curve intersects LONGEVITY
+    # at the last point in the series
+    r = ((env['LONGEVITY']-c['transmission'])/a) ** (1./(n-1))
+
+    # calculate exponentially increasing timepoints
+    series = [a*pow(r,i) for i in range(n)]
+    
+    # round down to nearest sample point (every 100 generations)
     series = [int(round(v/100)*100) for v in series]
-    samples = list(set([min(t, env['LONGEVITY']-c['transmission']) for t in series]))
-    samples =  [ "nodonor", 0 ] + samples
-    return(samples)
+
+    # adjust sample times to come after transmission event
+    #series = [x+c['transmission'] for x in series]
+
+    # add timepoint coincident with the transmission event
+    #series =  [ c['transmission'] ] + series
+    series =  [ 0 ] + series
+
+    # sanity checks.
+    assert(max(series) <= env['LONGEVITY'])	# not too big
+    assert(len(set(series)) == len(series)) # no duplicates
+
+    # add special 'nodonor' timepoint meaning don't include donor info at all,
+    series =  [ "nodonor" ] + series
+        
+    print("Donor timepoints = {}".format(",".join(map(str,sorted(series)))))
+    return(series)
 
 # donor time since transmission
-n.add('donor_time_since_transmission', calculate_donor_timepoints)
+n.add('donortime', calculate_donor_timepoints)
 
-def calculate_recipient_timepoints(c):
-    a=100
-    r=2.5
-    geom_series = [int(round(a*pow(r,i)/100)*100) for i in range(0,10)]
-    samples = [min(t, env['LONGEVITY']) for t in geom_series]
-    samples = list(set(samples))
-    return(samples)
-    
-n.add('recipient_time_since_transmission', calculate_recipient_timepoints)
+# calculate recipient timepoints.
+# very similar to calculate_donor_timepoints but does not need to be adjusted by transmission event.
+# We reuse the same series of recipient sample points for all transmission events.
+def calculate_recipient_timepoints(env):
+    a=400
+    n = 10
+    r = (env['LONGEVITY']/a) ** (1./n)
+    series = [a*pow(r,i) for i in range(n+1)]
+    # round down to nearest sample point (every 100 generations)
+    series = [int(round(v/100)*100) for v in series]
+    # sanity checks.
+    assert(max(series) <= env['LONGEVITY'])	# not too big
+    assert(len(set(series)) == len(series)) # no duplicates
+    print("Recipient timepoints = {}".format(",".join(map(str,sorted(series)))))
+    return(series)
+
+recipient_timepoints = calculate_recipient_timepoints(env)
+
+n.add('recipient_time_since_transmission', recipient_timepoints)
 
 
 # For each data set, we evaluated both strict and relaxed uncorrelated lognormal clock models.
@@ -161,28 +210,30 @@ n.add('recipient_time_since_transmission', calculate_recipient_timepoints)
 # HIV Sequence Data. Journal of Virology, 88(11),
 # 6181–94. doi:10.1128/JVI.00483-14
 
-n.add('clock_model', ['relaxed'])	# 'strict'
+n.add('clock_model', ['relaxed'], create_dir=False)	# 'strict'
 
 
-# Create a multiple alingment from the sampled sequences.
-# Note you don't hve to do this if all the sequences are the same length, but
-# when inels are involved, you have to align them before caling beast.
-# create_maf = create multiple alignment file
+# Sample from the donor lineage.
+# Sometimes we intentionaly do not include any donor information (nodonor).
+#
+# Make sure that when we intend to include donor info, that we actually get
+# some donor info. This avoids the problem we werehaving where a donor ampling
+# pattern for donor timepoint 0 was not actually pulling any donor info.
 
-# oh shit, the sampling of sequences is part of the script that builds the beast config file!
-# dumb, dumb, dumb!  I'll have to separate these...
+
 @w.add_target_with_env(env)
 def donor_sample(env, outdir, c):
     target = os.path.join(outdir, 'donor.fasta')
     
-    if env['donor_time_since_transmission'] != "nodonor":
-        cmd = ('../bin/fasta_sample.py --fasta-file ${SOURCES[0]} --n-sequences 10 --pattern "_${donor_time_since_transmission}_" >${TARGET}')
+    if env['donortime'] != "nodonor":
+        env['sampletime'] = env['donortime']+env['transmission']
+        cmd = '../bin/fasta_sample.py --fasta-file ${SOURCES[0]} --n-sequences 10 --pattern "_${sampletime}_" >${TARGET} && test -s ${TARGET}'
     else:
         cmd = ('>${TARGET}')
-
     return env.Command(target,
                        [ donorlineage],
                        cmd)
+
 
 
 @w.add_target_with_env(env)
@@ -194,6 +245,10 @@ def recipient_sample(env, outdir, c):
     return env.Command(target,
                        [ c['recipientlineage'] ],
                        cmd)
+
+# Create a multiple alignment from the sampled sequences.
+# Note you don't hve to do this if all the sequences are the same length, but
+# when indels are involved, you have to align them before calling beast.
 
 @w.add_target_with_env(env)
 def multiple_alignment(env, outdir, c):
@@ -226,22 +281,30 @@ def runbeast(env, outdir, c):
                os.path.join(outdir, 'beastcmd.log') ]
     return env.Command(target,
                        c['config_beast'],
-                       "srun --output=srun.log beast -working -overwrite -beagle " + os.path.abspath(str(c['config_beast'][0])) + " >${TARGETS[3]} 2>&1 ")
+                       "srun --output=srun.log beast -working -overwrite -beagle " + os.path.abspath(str(c['config_beast'][0])) + " >${TARGETS[3]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
 
 @w.add_target_with_env(env)
 def mcc(env, outdir, c):
     return env.Command(os.path.join(outdir, 'mcc.tree'),
                         c['runbeast'][2],
-                       'treeannotator ${SOURCES} | nexus2newick.py | tr -d "\047" >${TARGET} ')
+                       'treeannotator ${SOURCES} >${TARGET} ')
+
+@w.add_target_with_env(env)
+def prank_guidetree(env, outdir, c):
+    return env.Command(os.path.join(outdir, 'guidetree.tree'),
+                        c['mcc'],
+                       'nexus2newick.py ${SOURCES} | tr -d "\047" >${TARGET} ')
 
 
 @w.add_target_with_env(env)
 def runprank(env, outdir, c):
-    target = os.path.join(outdir, 'prank.best.anc.fas')
+    target = [ os.path.join(outdir, 'prank.best.anc.fas'),
+               os.path.join(outdir, 'prankcmd.log') ]
+
     env['output'] = os.path.join(outdir, 'prank')
-    cmd = ("prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -once -f=fasta -showanc -showtree -showevents -DNA ")
+    cmd = ("srun prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -DNA >${TARGETS[1]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
     return env.Command(target,
-                       [ c['multiple_alignment'], c['mcc'] ],
+                       [ c['multiple_alignment'], c['prank_guidetree'] ],
                        cmd)
 
 

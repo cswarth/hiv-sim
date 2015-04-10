@@ -20,13 +20,13 @@
 	    </div>
 	</div>
 
-	{% set svg_url = url_for('mcc_tree_svg', transmit=transmit, tsi_donor=tsi_donor, tsi_acceptor=tsi_acceptor, clockmodel=clockmodel) %}
+	{% set svg_url = url_for('mcc_tree_svg', transmit=transmit, tsi_donor=tsi_donor, tsi_acceptor=tsi_acceptor) %}
 
 	<p>
 	  <a href="{{ svg_url }}" rel="tooltip" data-original-title="Click for a larger version"><img src="{{ svg_url }}" width="800" alt="click for a larger version"/></a>
 	</p>
 
-	os.path.join("../sims/runs", transmit, tsi_donor, tsi_acceptor, clockmodel)
+	os.path.join("../sims/runs", transmit, tsi_donor, tsi_acceptor)
     </div>
 </div>
 
