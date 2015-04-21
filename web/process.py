@@ -8,6 +8,12 @@ import tempfile
 
 from Bio import SeqIO
 
+# Calculate Needleman-Wunsch global alignment score between two sequences.
+#
+# I don't think this routie is actually used right now
+# as the alignment score is available as part of the precomputed distance table
+# passed on the commandline.
+#
 # Author: cswarth
 def needle_score(seq1, seq2, verbose=False, keep=False):
     """
@@ -22,9 +28,12 @@ def needle_score(seq1, seq2, verbose=False, keep=False):
         SeqIO.write(seq2, fh2, 'fasta')
         fh2.flush()
 
-        cmd = ['needle', '-gapopen', '0',
-               '-gapextend', '0',
-               '-outfile',  outfile.name,
+        # invoke Needleman-Wunsch global alignment of two sequences from Emboss toolkit
+        # http://emboss.sourceforge.net/apps/release/6.3/emboss/apps/needle.html
+        # expect to find this in /home/matsengrp/local/bin/needle
+        
+
+        cmd = ['needle', '-outfile',  outfile.name,
                fh1.name, fh2.name]
         if verbose:
             print(' '.join(cmd))
@@ -38,8 +47,13 @@ def needle_score(seq1, seq2, verbose=False, keep=False):
 
 # Author: cswarth
 def multi_align(*seqs):
-    """
-    return multiple sequence alignment of 
+    """return multiple sequence alignment of 
+
+    Spawns `muscle` multiple sequence alignment process 
+
+    :returns: aligned sequences
+    :rtype: list of SeqIO records
+
     """
     results = None
     ntf = tempfile.NamedTemporaryFile
@@ -96,6 +110,23 @@ End;
 # Author: cmccoy
 def tree_svg(tree_path, width=1200, height=800, compress=True,
         figtree_path=None):
+    """Create svg graphics file for phylogenetic tree file.
+
+    Resulting graphic file is suitable for display in a web page.
+
+    :param tree_path: 
+    :param width: width of grpahic in pixels
+    :param height: height of graphic in pixels
+    :param compress: True to gzip compress the graphic
+    				(not sure this works now)
+    :param figtree_path: path to figtree executable 
+           (defaults to searching relative to 'figtree' executable)
+    :returns: SVG graphic string (may be compressed)
+    :rtype: string
+
+    """
+
+    
     """
     Generate an SVG from a BEAST nexus file
     """

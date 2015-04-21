@@ -236,9 +236,16 @@ import pandas as pd
 from collections import OrderedDict
 import brewer2mpl
 
+titles = {
+    'prank':'PRANK\n(darker = high score, close match to founder)',
+    'beast':'BEAST (darker = high score, close match to founder)',
+    'ratio':'Prank / beast ratio (darker = {max:.3f}, lighter= {min:.3f})',
+    'control':'Control (Sum of donor and recipient sample times)'
+}
+    
 measures = {
-    'prank':'PRANK',
-    'beast':'BEAST',
+    'prank':'PRANK Score',
+    'beast':'BEAST Score',
     'ratio':'Prank / beast ratio',
     'control':'Control'
 }
@@ -247,19 +254,17 @@ measures = {
 def index():
     data = pd.io.parsers.read_csv('../sims/distances.tsv', sep='\t')
 
+    
     # split the 'dir' column into three separate columns
     s = data['dir'].str.split('/').apply(pd.Series)
     s.drop([0], axis=1, inplace=True)
     s.rename(columns={1:'replicate',2:'xmit',3:'dtsi',4:'rtsi'},inplace=True)
-    print(s.head())
     s['replicate'] = s.replicate.str.extract('replicate_(\d+)').astype(int)
-    print(s.head())
+    nreplicates = len(set(s.replicate))
     
     data = data.join(s).drop(data.columns[0], axis=1)
-    print(data.head())
     data = data.groupby(['xmit', 'dtsi', 'rtsi'])['prank','beast','control'].mean()
     data.reset_index(inplace=True)
-    print(data.head())
     #    prank  beast  control  replicate  xmit   dtsi   rtsi
     # 0  13695  13655     1000          0  1000      0   1600
     # 1  13535  13585     1000          0  1000      0  25000
@@ -268,6 +273,11 @@ def index():
     # 4  13345  12900    25000          0  1000  24000   1600
 
     # data.groupby([‘col1’, ‘col2’])[‘col3’].mean()
+    print(list(data.columns))
+
+    data.control = data.rtsi.astype('int') + map(lambda x: 0 if x=='nodonor' else int(x), data.dtsi)
+    print(data.head())
+    # data.control = (data.dtsi + data.rtsi)
 
     # save the possible values for the tramission event
     xmit_events = sorted(data.xmit.unique())
@@ -277,8 +287,15 @@ def index():
 
     # Get all the form arguments in the url with defaults
     measure = getitem(args, 'measure', 'beast')
+    if measure not in measures:
+        measure = 'beast'
+    print("measure={}".format(measure))
     transmission = getitem(args, 'event', xmit_events[0])
-    print("transmission = {}".format(transmission))
+    if len(transmission) == 0:
+        transmission = '300'
+    print("transmission = '{}'".format(transmission))
+    print("len(transmission) = '{}'".format(len(transmission)))
+
     data = data[data.xmit == transmission ]
 
     # use colorbrewer to come up with a nice selction of colors to use
@@ -317,6 +334,7 @@ def index():
             transmission = data.xmit,
             prank = data.prank, 
             beast=data.beast,
+            ratio=data.ratio,
             n=len(data),
             rprank=rprank,
             rbeast=rbeast
@@ -332,16 +350,17 @@ def index():
     #y_range = sorted(list(set(data['rtsi'].tolist())), key= lambda x: int(x))
 
     tooltips = OrderedDict([
-        ("tranmission / donor / recipient", "@transmission / @donor / @recipient"),
+        ("transmission / donor / recipient", "@transmission / @donor / @recipient"),
         ("PRANK","@prank - @rprank"),
-        ("BEAST","@beast - @rbeast")
+        ("BEAST","@beast - @rbeast"),
+        ("prank/beast ratio","@ratio")
     ])
     url = "/runs/@transmission/@donor/@recipient/"
 
     tap = TapTool(action=OpenURL(url=url))
     hover = HoverTool(tooltips=tooltips)
-
-    fig = figure(title="{} score".format(measure),
+    
+    fig = figure(title=titles[measure].format(min=min(data[measure]), max=max(data[measure])),
                  x_range=x_range, y_range=y_range,
                  x_axis_location="below", plot_width=800, plot_height=600,
                  toolbar_location="left", tools=[tap,hover])
@@ -381,7 +400,8 @@ def index():
     script, div = components(fig, INLINE)
     template_vars = dict(
         plot_script=script, plot_div=div, plot_resources=plot_resources,
-        xmit_events = xmit_events, measures=measures, selected_measure=measures[measure])
+        xmit_events = xmit_events, measures=measures, selected_measure=measures[measure],
+        nreplicates=nreplicates)
 
     html = flask.render_template('embed_bokeh.html', **template_vars)
     return encode_utf8(html)
@@ -390,6 +410,7 @@ def index():
 @app.route('/figtree/<transmit>/<tsi_donor>/<tsi_acceptor>/mcc.svg')
 def mcc_tree_svg(transmit, tsi_donor, tsi_acceptor):
     tree = process.tree_svg(os.path.join("../sims/runs/replicate_0", transmit, tsi_donor, tsi_acceptor, 'mcc.tree'), compress=False)
+    print("tree SVG type = {}".format(type(tree)))
     resp = make_response(tree)
     resp.headers['Content-Type'] = 'image/svg+xml'
     # resp.headers['Content-Encoding'] = 'gzip'

@@ -1,0 +1,53 @@
+{% extends "layout.html" %}
+
+{% block title %}Simulated Transmission Detail{% endblock %}
+{% block pagetitle %}{{ directory }}{% endblock %}
+{% block maincontent %}
+  <head>
+    <meta charset='utf-8' />
+    <meta http-equiv='content-type' content='text/html; charset=utf-8' />
+
+    <title>Embed Demo</title>
+
+    {{ plot_resources|indent(4)|safe }}
+
+    {{ plot_script|indent(4)|safe }}
+
+  </head>
+
+  <div class="btn-group">
+
+    <a class="btn btn-default dropdown-toggle" data-toggle="dropdown" href="#">Select a Measure <span class="caret"></span></a>
+    <ul class="dropdown-menu">
+      	{% for key, value in measures.iteritems() -%}
+	<li><a href="{{url_for("index", measure=key, event=request.args.event)}}">{{ value }}</a></li>
+	{% endfor -%}      
+    </ul>
+    
+  </div>
+    
+  <div class="btn-group">
+
+    <a class="btn btn-default dropdown-toggle" data-toggle="dropdown" href="#">Select a Transmission Event <span class="caret"></span></a>
+    <ul class="dropdown-menu">
+    {% for event in xmit_events -%}
+    <li><a href="{{url_for("index", event=event, measure=request.args.measure)}}">...at generation {{ event }}.</a></li>
+    {% endfor -%}      
+    </ul>
+    
+  </div>
+    
+  {{ plot_div|indent(4)|safe }}
+  <br/><br/>
+  <p >
+  Each tile represents the mean value of {{nreplicates}} replicates.  Scores are calculated from pairwise Needleman-Wunsch global alignment between the infered founder sequence and the actual founder. <br/>
+  The Needleman-Wunsch algorithm is implemented in the <a href="http://emboss.sourceforge.net/apps/release/6.3/emboss/apps/needle.html">Emboss toolkit</a>.
+  using default values for all command-line parameters. 
+  <br/>
+  The "EDNAFULL" scoring matrix is used to score DNA comparisons with a gap open penalty of 10.0 and gap extension penalty of 0.5.
+  The EDNAFULL matrix is supplied by NCBI in <a href="ftp://ftp.ncbi.nih.gov/blast/matrices/">ftp://ftp.ncbi.nih.gov/blast/matrices/</a> as files NUC4.4.
+  NUC4.4 scores 5 for a match, but provides appropriate scores for ambiguity
+  codes so that, for example, R:A scores +1 (rounded up average of -4, -4,
+  5, 5).  It was created by Todd Lowe in 1992.
+  </p>
+{% endblock %}
