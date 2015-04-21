@@ -31,6 +31,10 @@ import pandas as pd
 import numpy as np
 import logging
 
+
+logging.basicConfig(stream=sys.stdout)
+log = logging.getLogger(__name__)
+
 def parse_args():
     ''' returns command-line arguments parsed by argparse.
         >>> args = parse_args()
@@ -52,20 +56,35 @@ def parse_args():
     parser.add_argument('-d', '--debug', dest='debug', action='store_true', default=False)
     return parser.parse_args()
 
+def needle_records(fh):
+    """separate output of needleman-wunsch alignment into individual records.
 
-def needle_score(seq1, seq2, keep=True):
+    We are only interested in the statistics asociated with each alignment, so discard all the 
+    details of specific base alignment.  Wish there were a way to make needle be quiet and just
+    output the parts we need.
+    """
+    recordsep = '#======================================='
+    for line in fh:
+        if line.startswith(recordsep):
+            record = ''
+            for line in fh:
+                if line.startswith(recordsep):
+                    yield record
+                    break
+                record += line
+    
+def needle_score(seq1, seq2):
     """Calculate needlman-wunsch score for aligning two sequences.
     """
     ntf = tempfile.NamedTemporaryFile
-    with ntf(prefix='seq1', delete = not keep) as fh1, \
-         ntf(prefix='seq2', delete = not keep) as fh2, \
-         ntf(prefix='align_out') as outfile:
+    with ntf(prefix='seq1', delete=False) as fh1, \
+         ntf(prefix='seq2', delete=False) as fh2, \
+         ntf(prefix='align_out', delete=False) as outfile:
         SeqIO.write(seq1, fh1, 'fasta')
         fh1.flush()
         SeqIO.write(seq2, fh2, 'fasta')
         fh2.flush()
 
-        logging.debug("delete = {}".format(not keep))
         # invoke Needleman-Wunsch global alignment of two sequences from Emboss toolkit
         # http://emboss.sourceforge.net/apps/release/6.3/emboss/apps/needle.html
         # expect to find this in /home/matsengrp/local/bin/needle
@@ -76,39 +95,42 @@ def needle_score(seq1, seq2, keep=True):
                fh1.name, fh2.name]
         logging.info(' '.join(cmd))
         subprocess.check_call(cmd, stderr=outfile)
-        result = outfile.read()
-        pattern = re.compile(r'# Score: (.*)')
-        score = pattern.search(result)
-        score = float(score.group(1)) if score is not None else 0
 
-        pattern = re.compile(r'# Gaps:\s+(\d+)/(\d+)')
-        gaps = pattern.search(result)
-        logging.debug(gaps.group(1), gaps.group(2))
-        length = int(gaps.group(2)) if gaps is not None else 0
-        gaps = float(gaps.group(1))/float(gaps.group(2)) if gaps is not None else 0
-        
-        pattern = re.compile(r'# Identity:\s+(\d+)/(\d+)')
-        identity = pattern.search(result)
-        identity = float(identity.group(1))/float(identity.group(2)) if identity is not None else 0
-        
-        return (score, gaps, identity, length)
+        score_pattern = re.compile(r'# Score: (.*)')
+        gaps_pattern = re.compile(r'# Gaps:\s+(\d+)/(\d+)')
+        ident_pattern = re.compile(r'# Identity:\s+(\d+)/(\d+)')
 
+        for record in needle_records(outfile):
+            score = score_pattern.search(record)
+            score = float(score.group(1)) if score is not None else 0
+
+            gaps = gaps_pattern.search(record)
+            length = int(gaps.group(2)) if gaps is not None else 0
+            gaps = float(gaps.group(1))/float(gaps.group(2)) if gaps is not None else 0
+        
+            identity = ident_pattern.search(record)
+            identity = float(identity.group(1))/float(identity.group(2)) if identity is not None else 0
+            yield (score, gaps, identity, length)
 
 
 def calculate_needle_score(founder, seq_iter):
-    si = list(seq_iter)
-    numberOfRows = len(si)
-    df = pd.DataFrame(index=np.arange(0, numberOfRows), columns=('score', 'identity', 'gaps', 'len') )
-    for x in np.arange(0, numberOfRows):
-        df.loc[x] = needle_score(founder, si[x])
+
+    df = pd.DataFrame(columns=('score', 'identity', 'gaps', 'len') )
+    x = 0
+    for scores in needle_score(founder, seq_iter):
+        df.loc[x] = scores
+        x += 1
+    logging.debug(df.shape)
     logging.debug(df.mean())
+
     return df.mean()
 
 
 def parse_log(fp, burnin=0.9):
     """
-    parse a beast trait output file.
+    parse a beast ancestral sequence output file.
     this is expected to be a state output file from beast holding inferred ancestral sequences.
+    Each non-comment line  consists of a number, 
     """
     count = 0
     for line in fp:
@@ -119,8 +141,6 @@ def parse_log(fp, burnin=0.9):
         count += 1
 
     skip = round(count * burnin)
-    logging.debug("\ttotal {} sequence".format(count))
-    logging.debug("\tskipping {} sequence".format(skip))
     # Reposition pointer at the beginning once again
     fp.seek(0, 0);
     if skip > 0:
@@ -156,20 +176,22 @@ def beast_iter(root):
     :rtype:
     """
 
-    def str2Seq(s):
+    def str2Seq(s, id='dynamic'):
         """Our distance measure takes a Bio.Seq object,
         but we will be reading strings from the beast ancestror log.
         Define a routine to do the conversion for us.
         """
         return SeqRecord(Seq(s, IUPAC.IUPACUnambiguousDNA),
-                  id="dynamic", name="anonymous",
-                  description="dynamically created sequence form string")
+                  id=id, name="anonymous",
+                  description="dynamically created sequence from ancestralSequences.log")
+    
     beast = os.path.join(root, 'ancestralSequences.log')
-    with open(beast) as fh:
-        # NB should skip burn-in period here or in parse_log()
+    logging.debug("iterating beast {}".format(beast))
 
+    with open(beast) as fh:
+        # NB parse_log() will skip a burn-in period
         for seq in parse_log(fh):
-            yield str2Seq(seq[1])
+            yield str2Seq(seq[1], id=seq[0])
 
 
 def prank_iter(root):
@@ -209,37 +231,32 @@ def calculate_control_score(founder, root):
     cscore = donor+recipient
     return cscore
 
-def process_founder(root):
-    """Calculate the distance from actual founder sequence to a variety of inferred founder sequences.
+def process_founder(founder, dirs):
+    """Calculate distance between founder & inferred sequences under directories 'dirs'
 
-    This routine calculates a number of distance measures across
-    founders inferred by several algorithms, including Prank and
+    This routine calculates distance measures between 'founder' and 
+    sequences inferred by several algorithms, including Prank and
     Beast.
 
-    There will be multiple simulated transmission hierarchies below
-    the founder sequence file.  For each inferred founder file,
+    For each inferred founder file,
     identify the root node and calculate the score between the root
     and the founder.  Higher scores are better.
     """
 
-    with open(os.path.join(root, "founder.fa")) as fh:
-        founder = SeqIO.read(fh, "fasta")
-
-    dirs = [root for root, dirnames, filenames in os.walk(root) if 'donor.fasta' in filenames]
-    
-    df = pd.DataFrame(index=np.arange(0,len(dirs)), columns=('root', 'control',
+    # preallocate the dataframe for efficiency
+    df = pd.DataFrame(columns=('root', 'control',
                                'p_score', 'p_identity', 'p_gaps', 'p_len',
                                'b_score', 'b_identity', 'b_gaps', 'b_len'))
 
-    x = 0
-    for root in dirs:
-        (pscore, pidentity, pgaps, plength)  = calculate_needle_score(founder, prank_iter(root))
-        (bscore, bidentity, bgaps, blength) = calculate_needle_score(founder, beast_iter(root))
-        cscore = calculate_control_score(founder, root)
-        df.loc[x] = (root, cscore, pscore, pidentity, pgaps, int(plength), bscore, bidentity, bgaps, int(blength))
-        # dirnames = []  # prune the tree below this point
-        x = x + 1
-    
+    df.to_csv(sys.stdout, index=False, header=True)
+    for dir in dirs:
+        (bscore, bidentity, bgaps, blength) = calculate_needle_score(founder, beast_iter(dir))
+        (pscore, pidentity, pgaps, plength)  = calculate_needle_score(founder, prank_iter(dir))
+        cscore = calculate_control_score(founder, dir)
+        df.loc[0] = (dir, cscore, pscore, pidentity, pgaps, int(plength), bscore, bidentity, bgaps, int(blength))
+        df.to_csv(sys.stdout, index=False, header=False)
+        sys.stdout.flush()
+
     return(df)
 
 def main():
@@ -247,9 +264,11 @@ def main():
     a = parse_args()
 
     if a.verbose:
-        Logger.setLevel(logging.INFO)
+        log.setLevel(logging.INFO)
     if a.debug:
-        Logger.setLevel(logging.DEBUG)
+        log.setLevel(logging.DEBUG)
+    logging.info("Info")
+    logging.debug("Debug")
 
     tbl = pd.DataFrame()
     matches = []
@@ -257,11 +276,21 @@ def main():
         if 'founder.fa' in filenames:
             logging.debug(root)
             logging.info('found "founder.fa" in {}'.format(root))
-            df = process_founder(root)
-            tbl = tbl.append(df)
+
+            # read the single founder sequence that initiated this lineage.
+            with open(os.path.join(root, "founder.fa")) as fh:
+                founder = SeqIO.read(fh, "fasta")
+            assert(founder is not None)
+            assert(len(founder) > 1)
+
+            # Find all directories below this point holding a 'donor.fasta' file
+            # These are points at which donor and recipient samples are combined to infer a founder.
+            dirs = [r for r, d, f in os.walk(root) if 'donor.fasta' in f]
+            assert(len(dirs) != 0)
+            
+            process_founder(founder, dirs)
             dirnames = []  # prune rest of tree.
 
-    tbl.to_csv(sys.stdout, index=False)
         
 if __name__ == '__main__':
     main()
