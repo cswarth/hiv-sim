@@ -71,21 +71,26 @@ donorsantaconfig = env.Command("donor_santa_config.xml",
                        ['../templates/santa_template.xml', '../hiv_pol.fa'],
                        "mksanta.py  -p patient1 ${SOURCES}   >${TARGET}")[0]
 
-donorlineage = env.Command("donorlineage.fa",
-                        [ donorsantaconfig, env['SANTAJAR'] ],
-                        [ "srun --output=srun.log java -jar ${SANTAJAR} -population=${POPULATION} -longevity=${LONGEVITY} ${SOURCES[0]}  && mv santa_out.fa ${TARGET} " ])[0]
-
+@w.add_target_with_env(env)
+def donorlineage(env, outdir, c):
+    return env.Command(os.path.join(outdir, "donorlineage.fa"),
+                       [ donorsantaconfig, env['SANTAJAR'] ],
+                       [  # santa will produce output files in its current directory.
+                          # so need to change to output directory before execution.
+                       Copy('$OUTDIR/', donorsantaconfig),
+                       'cd ${OUTDIR} && srun --output=srun.log java -jar ${SANTAJAR} -population=${POPULATION} -longevity=${LONGEVITY} ${SOURCES[0]}',
+                       Copy('${TARGET}', '${OUTDIR}/santa_out.fa') ])[0]
 
 # Sample the right host at various
 # timepoints along its evolution
 
-# for each right sister clades,
+# for each right sister clade,
 # infer ancestral sequence in two ways - 1) by including the left sister clade, and 2) by inferring over just the right sister clade.
 
 # estimate distance from each inferred sequence to actual root sequence.
 
 # n.add('transmission', [100, 300, 500, 700, 1000, 5000, 10000])
-n.add('transmission', [300, 1000])
+n.add('transmission', [300, 1000, 5000])
 
 ## Extract the founder sequence from the santa config file into a FASTA file.
 ## This makes it easier for the distance.py script to grab it for comparison.
@@ -95,7 +100,7 @@ def founder(env, outdir, c):
     cmd = ('../bin/fasta_sample.py --fasta-file ${SOURCES[0]} --n-sequences 1 --pattern "_${transmission}_" >${TARGET}')
 
     return env.Command(founder,
-                [ donorlineage ],
+                [ c['donorlineage'] ],
                 [ cmd ])
 
 
@@ -174,7 +179,7 @@ def calculate_donor_timepoints(c):
     # add special 'nodonor' timepoint meaning don't include donor info at all,
     series =  [ "nodonor" ] + series
         
-    print("Donor timepoints = {}".format(",".join(map(str,sorted(series)))))
+    # print("Donor timepoints = {}".format(",".join(map(str,sorted(series)))))
     return(series)
 
 # donor time since transmission
@@ -193,7 +198,7 @@ def calculate_recipient_timepoints(env):
     # sanity checks.
     assert(max(series) <= env['LONGEVITY'])	# not too big
     assert(len(set(series)) == len(series)) # no duplicates
-    print("Recipient timepoints = {}".format(",".join(map(str,sorted(series)))))
+    # print("Recipient timepoints = {}".format(",".join(map(str,sorted(series)))))
     return(series)
 
 recipient_timepoints = calculate_recipient_timepoints(env)
@@ -231,7 +236,7 @@ def donor_sample(env, outdir, c):
     else:
         cmd = ('>${TARGET}')
     return env.Command(target,
-                       [ donorlineage],
+                       [ c['donorlineage'] ],
                        cmd)
 
 
