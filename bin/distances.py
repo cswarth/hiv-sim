@@ -56,14 +56,27 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False)
     parser.add_argument('-d', '--debug', dest='debug', action='store_true', default=False)
+    parser.add_argument('-p', '--processes', default=15)
     return parser.parse_args()
 
 def needle_records(fh):
-    """separate output of needleman-wunsch alignment into individual records.
+    """
+    separate output form needleman-wunsch alignment into individual records.
 
-    We are only interested in the statistics asociated with each alignment, so discard all the 
-    details of specific base alignment.  Wish there were a way to make needle be quiet and just
-    output the parts we need.
+    We are only interested in the statistics asociated with each
+    alignment, so discard all the details of specific base alignment.
+
+    # Length: 2740
+    # Identity:    2740/2740 (100.0%)
+    # Similarity:  2740/2740 (100.0%)
+    # Gaps:           0/2740 ( 0.0%)
+    # Score: 13700.0
+
+    Wish there were a way to make needle be quiet and just output the
+    parts we need.  In fact it would be much more effeicient if it were
+    just calculating the parts we are interested in, instead of wasting
+    time and memory keep track of enough information constrct the actual
+    alignment.  All I need is the score.
     """
     recordsep = '#======================================='
     for line in fh:
@@ -74,7 +87,11 @@ def needle_records(fh):
                     yield record
                     break
                 record += line
-    
+
+
+from collections import namedtuple
+NWScore = namedtuple('NWScore', 'score identity gaps length')
+
 def needle_score(seq1, seq2):
     """Calculate needlman-wunsch score for aligning two sequences.
     """
@@ -100,20 +117,24 @@ def needle_score(seq1, seq2):
         subprocess.check_call(cmd, stderr=outfile)
 
         score_pattern = re.compile(r'# Score: (.*)')
+        score_pattern = re.compile(r'# Length: (.*)')
         gaps_pattern = re.compile(r'# Gaps:\s+(\d+)/(\d+)')
         ident_pattern = re.compile(r'# Identity:\s+(\d+)/(\d+)')
 
         for record in needle_records(outfile):
+            # Parse numeric statistics values from N-W text record.
             score = score_pattern.search(record)
             score = float(score.group(1)) if score else 0
 
+            length = length_pattern.search(record)
+            length = float(length.group(1)) if length else 0
+
             gaps = gaps_pattern.search(record)
-            length = int(gaps.group(2)) if gaps is not None else 0
             gaps = float(gaps.group(1))/float(gaps.group(2)) if gaps else 0
         
             identity = ident_pattern.search(record)
             identity = float(identity.group(1))/float(identity.group(2)) if identity else 0
-            yield (score, gaps, identity, length)
+            yield NWScore(score, identity, gaps, length)
 
 
 def calculate_needle_score(founder, seq_iter):
@@ -310,16 +331,31 @@ def main():
             assert(len(founder) > 1)
 
             # Find all directories below this point holding a 'donor.fasta' file
-            # These are points at which donor and recipient samples are combined to infer a founder.
+            # These are directories at which donor and recipient samples are combined to infer a founder.
             dirs = [r for r, d, f in os.walk(root) if 'donor.fasta' in f]
             assert(len(dirs) != 0)
-
             # compare the founder sequence to all samples taken from downstream lineages 
             df = process_founder(founder, dirs)
             tbl = df if tbl is None else tbl.append(df, ignore_index=True)
             dirnames = []  # prune rest of tree.
-            break
 
+
+    from datetime import datetime
+    
+    print("# Created by distances.py on {}".format(datetime.now().strftime("%Y-%m-%d %H:%M")))
+    print("# 'score' refers to Needleman-Wunsch pairwise alignment score.")
+    print("# 'score' refers to Needleman-Wunsch global alignment between the infered founder sequence and the actual founder.")
+    print("# The Needleman-Wunsch algorithm is implemented in the Emboss toolkit.")
+    print("# The \"EDNAFULL\" scoring matrix is used to score DNA comparisons with a gap open penalty of 10.0 and gap extension penalty of 0.5.")
+    print("# p_score = score btwn prank inferred and actual founder")
+    print("# p_gaps = # gap positions between prank inferred and actual founder")
+    print("# p_identity = # identical sites between prank inferred and actual founder")
+    print("# p_len = avg. length of prank inferred founder")
+    print("# b_score = score btwn beast inferred and actual founder")
+    print("# b_gaps = mean # gap positions between Beast high-posterior inferred and actual founder")
+    print("# b_identity = avg. # sites between Beast high-posterior inferred and actual founder")
+    print("# b_len = avg. length of beast inferred founder")
+            
     tbl.to_csv(sys.stdout, index=False, header=True)
     
 if __name__ == '__main__':
