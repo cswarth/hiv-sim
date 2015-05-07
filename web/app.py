@@ -257,6 +257,15 @@ titles = {
     'p_score':'Score of PRANK inferred founder',
     'b_score':'Score of Beast inferred founder',
     'ratio':'Prank / Beast ratio',
+
+    'b_identity':'Beast proportion identical sites',
+    'b_gaps':'Proportion gap sites - Beast founder',
+    'b_len':'Beast founder length',
+
+    'p_identity':'PRANK proportion identical sites',
+    'p_gaps':'Proportion gap sites - PRANK founder',
+    'p_len':'PRANK founder length',
+
     'control':'Color palette - testing and calibration'
 }
     
@@ -313,8 +322,8 @@ def index():
             beast=data.b_score,
             ratio=data.ratio,
             n=len(data),
-            rprank=rprank,
-            rbeast=rbeast
+            rprank=data.p_rank,
+            rbeast=data.b_rank
         )
     )
 
