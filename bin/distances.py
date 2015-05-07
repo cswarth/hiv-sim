@@ -36,6 +36,7 @@ import multiprocessing
 
 # logging.basicConfig(stream=sys.stdout)
 log = logging.getLogger(__name__)
+a = None # reserved for arguments
 
 def parse_args():
     ''' returns command-line arguments parsed by argparse.
@@ -96,8 +97,8 @@ def needle_score(seq1, seq2):
     """Calculate needlman-wunsch score for aligning two sequences.
     """
     ntf = tempfile.NamedTemporaryFile
-    with ntf(prefix='seq1', delete=False) as fh1, \
-         ntf(prefix='seq2', delete=False) as fh2, \
+    with ntf(prefix='seq1', delete=True) as fh1, \
+         ntf(prefix='seq2', delete=True) as fh2, \
          ntf(prefix='align_out', delete=True) as outfile:
         SeqIO.write(seq1, fh1, 'fasta')
         fh1.flush()
@@ -117,7 +118,7 @@ def needle_score(seq1, seq2):
         subprocess.check_call(cmd, stderr=outfile)
 
         score_pattern = re.compile(r'# Score: (.*)')
-        score_pattern = re.compile(r'# Length: (.*)')
+        length_pattern = re.compile(r'# Length: (.*)')
         gaps_pattern = re.compile(r'# Gaps:\s+(\d+)/(\d+)')
         ident_pattern = re.compile(r'# Identity:\s+(\d+)/(\d+)')
 
@@ -237,7 +238,24 @@ def prank_iter(root):
     record_dict = SeqIO.index(os.path.join(root, 'prank.best.anc.fas'), "fasta")
     yield record_dict[rootid] 
 
-    
+
+def consensus_iter(root):
+    """
+    calculate a consensus sequence of both donor and recipient sequences 
+    """
+    from Bio.Align.Generic import Alignment
+    from Bio.Alphabet import IUPAC, Gapped
+    from Bio.Align import AlignInfo
+    from Bio import AlignIO
+
+    consensus = ""
+    maffile = os.path.join(root, 'sequences.maf')
+    with open(maffile) as fh:
+        alignment = AlignIO.read(maffile, "fasta")
+        summary_align = AlignInfo.SummaryInfo(alignment)
+        consensus = summary_align.gap_consensus()
+    yield SeqRecord(consensus, id='consensus')
+
 def calculate_control_score(founder, root):
     # cscore is a control value that increases monotonically with donor and recipient distance.
     # it is used to validate plotting methods.
@@ -274,14 +292,18 @@ def _process_dir(founder, dir):
 
     Higher scores are better.
 """
-    (bscore, bidentity, bgaps, blength) = calculate_needle_score(founder, beast_iter(dir, 0.4))
-    (pscore, pidentity, pgaps, plength)  = calculate_needle_score(founder, prank_iter(dir))
-    cscore = calculate_control_score(founder, dir)
+    cscore, cidentity, cgaps, clength = calculate_needle_score(founder, consensus_iter(dir))
+    bscore, bidentity, bgaps, blength = calculate_needle_score(founder, beast_iter(dir, 0.4))
+    pscore, pidentity, pgaps, plength = calculate_needle_score(founder, prank_iter(dir))
+    control = calculate_control_score(founder, dir)
     sys.stdout.flush()
     # return a tuple 
-    return (dir, cscore, pscore, pidentity, pgaps, int(plength), bscore, bidentity, bgaps, int(blength))
+    return (dir, control,
+            pscore, pidentity, pgaps, int(plength),
+            bscore, bidentity, bgaps, int(blength),
+            cscore, cidentity, cgaps, int(clength))
 
-def process_founder(founder, dirs):
+def process_founder(founder, dirs, nproc=5):
     """Calculate distance between founder & inferred sequences under directories 'dirs'
 
     This routine calculates distance measures between 'founder' and 
@@ -292,17 +314,22 @@ def process_founder(founder, dirs):
     identify the root node and calculate the score between the root
     and the founder.  Higher scores are better.
     """
-    pool = multiprocessing.Pool(15)
-    results = [pool.apply_async(_process_dir, args = (founder, dir)) for dir in dirs]
-    pool.close()
-    pool.join()
-    result_list = [r.get() for r in results]
+    global a
+    if a.debug:
+        results_list = [_process_dir(founder, dir) for dir in dirs]
+    else:
+        pool = multiprocessing.Pool(nproc)
+        results = [pool.apply_async(_process_dir, args = (founder, dir)) for dir in dirs]
+        pool.close()
+        pool.join()
+        result_list = [r.get() for r in results]
 
-    df = pd.DataFrame.from_records(result_list, columns=('root', 'control', 'p_score', 'p_identity', 'p_gaps', 'p_len', 'b_score', 'b_identity', 'b_gaps', 'b_len'))
+    df = pd.DataFrame.from_records(result_list, columns=('root', 'control', 'p_score', 'p_identity', 'p_gaps', 'p_len', 'b_score', 'b_identity', 'b_gaps', 'b_len', 'c_score', 'c_identity', 'c_gaps', 'c_len'))
     return(df)
 
 def main():
     loglevel = "ERROR"
+    global a
     a = parse_args()
 
     if a.verbose:
@@ -335,7 +362,7 @@ def main():
             dirs = [r for r, d, f in os.walk(root) if 'donor.fasta' in f]
             assert(len(dirs) != 0)
             # compare the founder sequence to all samples taken from downstream lineages 
-            df = process_founder(founder, dirs)
+            df = process_founder(founder, dirs, nproc=int(a.processes))
             tbl = df if tbl is None else tbl.append(df, ignore_index=True)
             dirnames = []  # prune rest of tree.
 
