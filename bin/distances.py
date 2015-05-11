@@ -17,7 +17,7 @@ import argparse
 import os.path
 from  itertools import ifilter
 import  itertools
-from Bio import SeqIO
+from Bio import SeqIO, Alphabet
 from Bio import Phylo	# for reading Prank trees
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
@@ -104,7 +104,6 @@ def needle_score(seq1, seq2):
         fh1.flush()
         SeqIO.write(seq2, fh2, 'fasta')
         fh2.flush()
-
         # invoke Needleman-Wunsch global alignment of two sequences from Emboss toolkit
         # http://emboss.sourceforge.net/apps/release/6.3/emboss/apps/needle.html
         # expect to find this in /home/matsengrp/local/bin/needle
@@ -253,8 +252,41 @@ def consensus_iter(root):
     with open(maffile) as fh:
         alignment = AlignIO.read(maffile, "fasta")
         summary_align = AlignInfo.SummaryInfo(alignment)
-        consensus = summary_align.gap_consensus()
-    yield SeqRecord(consensus, id='consensus')
+        # consensus = summary_align.gap_consensus()
+        m = summary_align.pos_specific_score_matrix()
+        
+        def cons(row):
+            # each row holds abundances of each nucleotide or gap.
+            mm = max([v for v in row.values()])
+            vv = [k for k,v in row.items() if mm == v]
+            if len(vv) > 1:
+                if '-' in vv:
+                    c = '?'
+                else:
+                    c = 'X'
+            else:
+                c = vv[0]
+            return c
+            
+        consensus = "".join([cons(row) for row in m])
+        
+        # <class 'Bio.Align.AlignInfo.PSSM'>
+        # You can access a single element of the PSSM using the following:
+
+        # your_pssm[sequence_number][residue_count_name]
+        # For instance, to get the 'T' residue for the second element in the above alignment you would need to do:
+
+        # your_pssm[1]['T']
+        # A  0.0 20.0 0.0 0.0 0.0
+        # X  12.0 4.0 0.0 2.0 2.0
+        # G  12.0 0.0 0.0 6.0 2.0
+        # A  8.0 9.0 2.0 1.0 0.0
+        # T  0.0 0.0 2.0 0.0 18.0
+        # T  0.0 4.0 1.0 0.0 15.0
+        # A  0.0 20.0 0.0 0.0 0.0
+        # X  0.0 10.0 0.0 10.0 0.0
+
+    yield SeqRecord(Seq(consensus), id='consensus', description=root)
 
 def calculate_control_score(founder, root):
     # cscore is a control value that increases monotonically with donor and recipient distance.
@@ -293,7 +325,7 @@ def _process_dir(founder, dir):
     Higher scores are better.
 """
     cscore, cidentity, cgaps, clength = calculate_needle_score(founder, consensus_iter(dir))
-    bscore, bidentity, bgaps, blength = calculate_needle_score(founder, beast_iter(dir, 0.4))
+    bscore, bidentity, bgaps, blength = calculate_needle_score(founder, beast_iter(dir, burnin=0.40))
     pscore, pidentity, pgaps, plength = calculate_needle_score(founder, prank_iter(dir))
     control = calculate_control_score(founder, dir)
     sys.stdout.flush()
@@ -325,7 +357,8 @@ def process_founder(founder, dirs, nproc=5):
         result_list = [r.get() for r in results]
 
     df = pd.DataFrame.from_records(result_list, columns=('root', 'control', 'p_score', 'p_identity', 'p_gaps', 'p_len', 'b_score', 'b_identity', 'b_gaps', 'b_len', 'c_score', 'c_identity', 'c_gaps', 'c_len'))
-    return(df)
+    return(df)    
+
 
 def main():
     loglevel = "ERROR"
@@ -345,6 +378,8 @@ def main():
     logging.info("Info")
     logging.debug("Debug")
 
+
+    
     tbl = None
     for root, dirnames, filenames in os.walk('runs'):
         if 'founder.fa' in filenames:
@@ -361,7 +396,8 @@ def main():
             # These are directories at which donor and recipient samples are combined to infer a founder.
             dirs = [r for r, d, f in os.walk(root) if 'donor.fasta' in f]
             assert(len(dirs) != 0)
-            # compare the founder sequence to all samples taken from downstream lineages 
+
+            # compare samples taken from downstream lineages to the founder sequence
             df = process_founder(founder, dirs, nproc=int(a.processes))
             tbl = df if tbl is None else tbl.append(df, ignore_index=True)
             dirnames = []  # prune rest of tree.
