@@ -30,11 +30,7 @@ from bokeh.templates import RESOURCES
 from bokeh.util.string import encode_utf8
 from bokeh.models import ColumnDataSource, FactorRange, TapTool, HoverTool, OpenURL
 
-
-app = Flask(__name__, template_folder='templates/')
-
-filters.register(app)	# register jinja filters in the app
-
+from . import app
 
 def degapify(s):
     return re.sub('[-_]', '', s)
@@ -108,8 +104,15 @@ def beastseq(path):
     consensus = summary_align.dumb_consensus()
     return SeqRecord(consensus, id='consensus')
 
-                
 def prankseq(path):
+    """extract the PRANK ancestral sequence associated with the root node.
+
+    Currently this is a total hack that finds the sequence with the highest
+    numeric identifier.  This works, but the "right" way to do this would be to
+    to read the tree, identify the root, and extract the sequence with the
+    corresponding identifier.
+
+    """
     prank = os.path.join(path, 'prank.best.anc.fas')
     iseqs = FastaIterator(prank, None)
     pattern = re.compile(r'^#(\d+)#$')
@@ -130,7 +133,7 @@ def prankseq(path):
 @app.route('/runs/<transmit>/<tsi_donor>/<tsi_acceptor>/')
 def transmission_detail(transmit, tsi_donor, tsi_acceptor):
     """
-    provide a basic landing page that summarizes the information ina single directory of the simulation hierarchy.
+    provide a basic landing page that summarizes the information in a single directory of the simulation hierarchy.
     """
     vars = {}
 
@@ -557,11 +560,35 @@ def mcc_tree_svg(transmit, tsi_donor, tsi_acceptor):
     # resp.headers['Content-Encoding'] = 'gzip'
 
     return resp
+
+
+@app.route("/simple.png")
+def simple():
+    import datetime
+    import StringIO
+    import random
  
-if __name__ == "__main__":
-    # add files to be watched for changes
-    # http://stackoverflow.com/a/9511655/1135316
-    extra_files = [os.path.join(os.getcwd(), "util.py"),
-                   os.path.join(os.getcwd(), "process.py"),
-                   os.path.join(os.getcwd(), "filters.py")]
-    app.run(host="0.0.0.0", port=5000, debug=True, extra_files=extra_files)
+    from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+    from matplotlib.figure import Figure
+    from matplotlib.dates import DateFormatter
+ 
+    fig=Figure()
+    ax=fig.add_subplot(111)
+    x=[]
+    y=[]
+    now=datetime.datetime.now()
+    delta=datetime.timedelta(days=1)
+    for i in range(10):
+        x.append(now)
+        now+=delta
+        y.append(random.randint(0, 1000))
+    ax.plot_date(x, y, '-')
+    ax.xaxis.set_major_formatter(DateFormatter('%Y-%m-%d'))
+    fig.autofmt_xdate()
+    canvas=FigureCanvas(fig)
+    png_output = StringIO.StringIO()
+    canvas.print_png(png_output)
+    response=make_response(png_output.getvalue())
+    response.headers['Content-Type'] = 'image/png'
+    return response
+ 
