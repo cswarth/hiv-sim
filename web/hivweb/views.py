@@ -148,7 +148,7 @@ def transmission_detail(transmit, tsi_donor, tsi_acceptor):
     beast = beastseq(os.path.join("../sims/runs/replicate_0", transmit, tsi_donor, tsi_acceptor))
     beast.id = 'beast'
 
-    (nreplicates, data) = load_data()
+    data = load_data()
     data.set_index(['xmit','dtsi','rtsi'], inplace=True)
     irow = data.loc[transmit, tsi_donor, tsi_acceptor]
 
@@ -290,8 +290,9 @@ measures = {
 
 @app.route("/single/")
 def index():
-    (nreplicates, data) = load_data()
-
+    data = load_data()
+    nreplicates = data.nreplicates	# save attribute before dataframe gets copied.
+    
     # save the possible values for the transmission event.
     # we will use these to populate the choices on the web page.
     xmit_events = sorted(data.xmit.unique())
@@ -409,7 +410,6 @@ def load_data():
     # split the 'root' column into separate columns
     # see http://pandas.pydata.org/pandas-docs/stable/generated/pandas.core.strings.StringMethods.extract.html
     s = data.root.str.extract('/replicate_(?P<replicate>\d+)/(?P<xmit>\d+)/(?P<dtsi>.+)/(?P<rtsi>\d+)')
-    nreplicates = len(set(s.replicate))
 
     # assert that the extract worked correctly and there are no NANs in the resulting data frame.
     assert(not s.isnull().any(1).any())
@@ -427,14 +427,18 @@ def load_data():
 
     data['ratio'] = data.p_score/data.b_score
 
+    # add number of replicates as a custom attribute of the data frame
+    data.nreplicates = len(set(s.replicate))
+    
     # FYI - if the control column in the distance table is bogus, this is how we can compute our own.
     # data.control = data.rtsi.astype('int') + map(lambda x: 0 if x=='nodonor' else int(x), data.dtsi)
-    return (nreplicates, data)
+    return data
 
 
 @app.route('/')
 def multitile():
-    (nreplicates, data) = load_data()
+    data = load_data()
+    nreplicates = data.nreplicates	# save attribute before data frame gets copied.
     
     # save the possible values for the transmission event.
     # we will use these to populate the choices on the web page.
@@ -561,34 +565,42 @@ def mcc_tree_svg(transmit, tsi_donor, tsi_acceptor):
 
     return resp
 
+# very nice implementation of tidyr::gather functionality
+# http://connor-johnson.com/2014/08/28/tidyr-and-pandas-gather-and-melt/
+def gather( df, key, value, cols ):
+    id_vars = [ col for col in df.columns if col not in cols ]
+    id_values = cols
+    var_name = key
+    value_name = value
+    return pd.melt( df, id_vars, id_values, var_name, value_name )
 
-@app.route("/simple.png")
-def simple():
-    import datetime
-    import StringIO
-    import random
- 
-    from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-    from matplotlib.figure import Figure
-    from matplotlib.dates import DateFormatter
- 
-    fig=Figure()
-    ax=fig.add_subplot(111)
-    x=[]
-    y=[]
-    now=datetime.datetime.now()
-    delta=datetime.timedelta(days=1)
-    for i in range(10):
-        x.append(now)
-        now+=delta
-        y.append(random.randint(0, 1000))
-    ax.plot_date(x, y, '-')
-    ax.xaxis.set_major_formatter(DateFormatter('%Y-%m-%d'))
-    fig.autofmt_xdate()
-    canvas=FigureCanvas(fig)
-    png_output = StringIO.StringIO()
-    canvas.print_png(png_output)
-    response=make_response(png_output.getvalue())
+import datetime
+from StringIO import StringIO
+import random
+
+from ggplot import ggplot, aes, geom_density, ggsave
+
+@app.route("/density.png")
+def density():
+    
+    data = load_data()
+
+    # http://connor-johnson.com/2014/08/28/tidyr-and-pandas-gather-and-melt/
+    m = gather( data, 'measure', 'score', ['p_score', 'b_score', 'c_score'] )
+
+    plt = ggplot(m, aes(x='score', fill='measure')) + \
+      geom_density(alpha=0.3)
+
+    img = StringIO()
+    ggsave(plt, img, format="png")
+
+    # https://gist.github.com/wilsaj/862153
+    # Example of rendering a matplotlib image directly to Flask view
+    response=make_response(img.getvalue())
     response.headers['Content-Type'] = 'image/png'
     return response
- 
+
+
+
+
+
