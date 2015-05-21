@@ -33,6 +33,7 @@ import os.path
 from nestly import Nest
 from nestly.scons import SConsWrap
 from SCons.Script import Environment
+from SCons.Action import ActionFactory
 
 environ = os.environ.copy()
 
@@ -90,7 +91,9 @@ def donorlineage(env, outdir, c):
 # estimate distance from each inferred sequence to actual root sequence.
 
 # n.add('transmission', [100, 300, 500, 700, 1000, 5000, 10000])
-n.add('transmission', [300, 1000, 5000])
+def xmit_label(n):
+    return "xmit_"+str(n)
+n.add('transmission', [300, 1000, 5000], label_func=xmit_label)
 
 ## Extract the founder sequence from the santa config file into a FASTA file.
 ## This makes it easier for the distance.py script to grab it for comparison.
@@ -137,19 +140,25 @@ def recipientlineage(env, outdir, c):
 # donor.  Both donor and recipient lineages have sampled sequences from their
 # populations at every 100 generations.
 #
-# Now we need to pick the timepoints at which to sample both donor and
-# recipient lineages to do founder inference.  We could just pick some static
+# Now we need to pick timepoints at which to sample both donor and
+# recipient lineages for founder inference.  We could just pick some static
 # timepoints, but there should be some rationale behind the selection, and the
 # selected timepoints should cover the entire lineage.  Also static points
 # would have to be adjusted by hand if total longevity were to change.
 #
-# Start with a geometric series of timepoints [a*(r^i) for i in 0..n].
+# We know we want to sample 'n' points between the transmission event and the
+# end of the donor lineage.  Start with a geometric series of timepoints
+# [a*(r^i) for i in 0..n].  'n' is fixed, 'a' is a fixed multiplier, 'r' is
+# calculated so the last timepoint falls exactly at end of the lineage.
 # Constrain these values to fall on 100-generation boundaries where the lineage
 # has been previously sampled.  Cutoff the series at the maximum longevity.
 # Finally add in a couple of special timepoints at the beginning.
 #
-# Because the donor timepoints are adjusted for tranmission time, we will
-# need a separate series of points for each tramission event.
+# Because the donor timepoints are adjusted to fit between the transmission
+# time and the maximum donor lineage, we need a separate series of points for
+# each transmission event.  That is, the 'r' value will be different for each
+# transmission point so the 'n' points fit within the time remaining between
+# transmission and end of lineage.
 #
 def calculate_donor_timepoints(c):
     a=300	# how fast sampling curve should grow
@@ -183,7 +192,9 @@ def calculate_donor_timepoints(c):
     return(series)
 
 # donor time since transmission
-n.add('donortime', calculate_donor_timepoints)
+def donor_label(n):
+    return "dtst_"+str(n)
+n.add('donortime', calculate_donor_timepoints, label_func=donor_label)
 
 # calculate recipient timepoints.
 # very similar to calculate_donor_timepoints but does not need to be adjusted by transmission event.
@@ -203,7 +214,9 @@ def calculate_recipient_timepoints(env):
 
 recipient_timepoints = calculate_recipient_timepoints(env)
 
-n.add('recipient_time_since_transmission', recipient_timepoints)
+def recipient_label(n):
+    return "rtsi_"+str(n)
+n.add('recipient_time_since_transmission', recipient_timepoints, label_func=recipient_label)
 
 
 # For each data set, we evaluated both strict and relaxed uncorrelated lognormal clock models.
@@ -221,9 +234,10 @@ n.add('clock_model', ['relaxed'], create_dir=False)	# 'strict'
 # Sample from the donor lineage.
 # Sometimes we intentionaly do not include any donor information (nodonor).
 #
-# Make sure that when we intend to include donor info, that we actually get
-# some donor info. This avoids the problem we werehaving where a donor ampling
-# pattern for donor timepoint 0 was not actually pulling any donor info.
+# 'test -s' to make sure the output file is not empty.  We were having a
+# problem where a sampling pattern for donor timepoint 0 was not actually
+# pulling any donor info.  That will cause the build to fail if it happens
+# again.
 
 
 @w.add_target_with_env(env)
@@ -300,9 +314,9 @@ def prank_guidetree(env, outdir, c):
                         c['mcc'],
                        'nexus2newick.py ${SOURCES} | tr -d "\047" >${TARGET} ')
 
-
 @w.add_target_with_env(env)
-def runprank(env, outdir, c):
+def print_dna(env, outdir, c):
+    outdir = os.path.join(outdir, 'prank_dna')
     target = [ os.path.join(outdir, 'prank.best.anc.fas'),
                os.path.join(outdir, 'prankcmd.log') ]
 
@@ -310,7 +324,28 @@ def runprank(env, outdir, c):
     cmd = ("srun prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -DNA >${TARGETS[1]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
     return env.Command(target,
                        [ c['multiple_alignment'], c['prank_guidetree'] ],
-                       cmd)
+                       [
+                           Mkdir(outdir),
+                           cmd
+                       ])
+
+
+# https://github.com/cswarth/hiv-sim/issues/2
+# Try out codon PRANK
+@w.add_target_with_env(env)
+def prank_codon(env, outdir, c):
+    outdir = os.path.join(outdir, 'prank_codon')
+    target = [ os.path.join(outdir, 'prank.best.anc.fas'),
+               os.path.join(outdir, 'prankcmd.log') ]
+
+    env['output'] = os.path.join(outdir, 'prank')
+    cmd = ("srun prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -DNA -codon >${TARGETS[1]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
+    return env.Command(target,
+                       [ c['multiple_alignment'], c['prank_guidetree'] ],
+                       [
+                           Mkdir(outdir),
+                           cmd
+                       ])
 
 
 # @w.add_target_with_env(env)

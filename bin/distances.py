@@ -32,11 +32,17 @@ import numpy as np
 import logging
 import csv
 import multiprocessing
-
+import exceptions
 
 # logging.basicConfig(stream=sys.stdout)
 log = logging.getLogger(__name__)
 a = None # reserved for arguments
+columns = ('root', 'c_score', 'c_identity', 'c_gaps', 'c_len', 'b_score', 'b_identity', 'b_gaps', 'b_len', 'pdna_score', 'pdna_identity', 'pdna_gaps', 'pdna_len')
+columns = ('method', 'root', 'score', 'identity', 'gaps', 'len')
+
+# set pandas width for printing tables
+# http://stackoverflow.com/a/11711637/1135316
+pd.set_option('display.width', 200)
 
 def parse_args():
     ''' returns command-line arguments parsed by argparse.
@@ -96,6 +102,8 @@ NWScore = namedtuple('NWScore', 'score identity gaps length')
 def needle_score(seq1, seq2):
     """Calculate needlman-wunsch score for aligning two sequences.
     """
+    #yield NWScore(0,0,0,0)
+    #return
     ntf = tempfile.NamedTemporaryFile
     with ntf(prefix='seq1', delete=True) as fh1, \
          ntf(prefix='seq2', delete=True) as fh2, \
@@ -218,9 +226,9 @@ def beast_iter(root, burnin):
             yield str2Seq(seq[1], id=seq[0])
 
 
-def prank_iter(root):
+def prank_dna_iter(root):
     """
-    iterate over Prank inferred founder sequence(s)
+    iterate over Prank founder sequence(s) inferred from DNA model
 
     This routine knows how to retrieve and iterate over sequences
     produced by Prank. It will yield a single sequence corresponding to
@@ -232,15 +240,38 @@ def prank_iter(root):
     """
 
     # identify the sequence associated with the root node.
-    tree = Phylo.read(os.path.join(root, 'prank.best.anc.dnd'),'newick')
+    prankdir = os.path.join(root, 'prank_dna')
+    tree = Phylo.read(os.path.join(prankdir, 'prank.best.anc.dnd'), 'newick')
     rootid = str(tree.root)
-    record_dict = SeqIO.index(os.path.join(root, 'prank.best.anc.fas'), "fasta")
+    record_dict = SeqIO.index(os.path.join(prankdir, 'prank.best.anc.fas'), "fasta")
+    yield record_dict[rootid] 
+
+
+def prank_codon_iter(root):
+    """
+    iterate over Prank founder sequence(s) inferred from CODON model
+    See https://github.com/cswarth/hiv-sim/issues/2
+
+    This routine knows how to retrieve and iterate over sequences
+    produced by Prank. It will yield a single sequence corresponding to
+    the root of the guide tree.
+
+    :param root: string name of directory where sequence files can be found.
+    :returns: iterator over seqeuences
+    :rtype:
+    """
+
+    # identify the sequence associated with the root node.
+    prankdir = os.path.join(root, 'prank_codon')
+    tree = Phylo.read(os.path.join(prankdir, 'prank.best.anc.dnd'), 'newick')
+    rootid = str(tree.root)
+    record_dict = SeqIO.index(os.path.join(prankdir, 'prank.best.anc.fas'), "fasta")
     yield record_dict[rootid] 
 
 
 def consensus_iter(root):
     """
-    calculate a consensus sequence of both donor and recipient sequences 
+    calculate a single consensus sequence of both donor and recipient sequences 
     """
     from Bio.Align.Generic import Alignment
     from Bio.Alphabet import IUPAC, Gapped
@@ -254,7 +285,7 @@ def consensus_iter(root):
         summary_align = AlignInfo.SummaryInfo(alignment)
         # consensus = summary_align.gap_consensus()
         m = summary_align.pos_specific_score_matrix()
-        
+
         def cons(row):
             # each row holds abundances of each nucleotide or gap.
             mm = max([v for v in row.values()])
@@ -267,9 +298,9 @@ def consensus_iter(root):
             else:
                 c = vv[0]
             return c
-            
+
         consensus = "".join([cons(row) for row in m])
-        
+
         # <class 'Bio.Align.AlignInfo.PSSM'>
         # You can access a single element of the PSSM using the following:
 
@@ -286,6 +317,11 @@ def consensus_iter(root):
         # A  0.0 20.0 0.0 0.0 0.0
         # X  0.0 10.0 0.0 10.0 0.0
 
+
+    # 'consensus' is just a string made from the consensus base calculated
+    # across all sites from donor and recipient sequences.  although this used
+    # yield instead of return, it is always returning a single sequence.
+    
     yield SeqRecord(Seq(consensus), id='consensus', description=root)
 
 def calculate_control_score(founder, root):
@@ -308,10 +344,9 @@ def calculate_control_score(founder, root):
 
 # NB this routine MUST be a top-level routine!
 #
-# Because this routine is caslled via multiprocessing.apply_async(), it must
-# not be buried inside anothr routine or it won't be visible.  You might this
-# this restiction would only affect Windows systems that lack true fork
-# functionality, but apparently this restriction is true on all systems.
+# Because this routine is called via routines in the 'multiprocessing' package, it must
+# not be buried inside another routine or it won't be visible.  The failure
+# mode is complete silence from the multiprocessing routines.
 def _process_dir(founder, dir):
     """
     Calculate distance between founder & inferred sequences under directories 'dirs'
@@ -324,16 +359,20 @@ def _process_dir(founder, dir):
 
     Higher scores are better.
 """
-    cscore, cidentity, cgaps, clength = calculate_needle_score(founder, consensus_iter(dir))
-    bscore, bidentity, bgaps, blength = calculate_needle_score(founder, beast_iter(dir, burnin=0.40))
-    pscore, pidentity, pgaps, plength = calculate_needle_score(founder, prank_iter(dir))
-    control = calculate_control_score(founder, dir)
-    sys.stdout.flush()
-    # return a tuple 
-    return (dir, control,
-            pscore, pidentity, pgaps, int(plength),
-            bscore, bidentity, bgaps, int(blength),
-            cscore, cidentity, cgaps, int(clength))
+    try:
+        prank_dna = calculate_needle_score(founder, prank_dna_iter(dir))
+        prank_codon = calculate_needle_score(founder, prank_codon_iter(dir))
+        cons_data = calculate_needle_score(founder, consensus_iter(dir))
+        beast_data = calculate_needle_score(founder, beast_iter(dir, burnin=0.40))
+        m = np.vstack((cons_data, beast_data, prank_dna, prank_codon))
+        df = pd.DataFrame(m, columns=('nw_score', 'pct_identity', 'pct_gaps', 'len'))
+        df['method'] = pd.Series(['consensus', 'beast', 'prank_dna', 'prank_codon'], index=df.index)
+        df['dir'] = pd.Series(dir, index=df.index)
+    except exceptions.IOError as e:
+        logging.info(e)
+        df =  None
+
+    return df
 
 def process_founder(founder, dirs, nproc=5):
     """Calculate distance between founder & inferred sequences under directories 'dirs'
@@ -347,8 +386,9 @@ def process_founder(founder, dirs, nproc=5):
     and the founder.  Higher scores are better.
     """
     global a
+    global columns
     if a.debug:
-        results_list = [_process_dir(founder, dir) for dir in dirs]
+        result_list = [_process_dir(founder, dir) for dir in dirs]
     else:
         pool = multiprocessing.Pool(nproc)
         results = [pool.apply_async(_process_dir, args = (founder, dir)) for dir in dirs]
@@ -356,7 +396,10 @@ def process_founder(founder, dirs, nproc=5):
         pool.join()
         result_list = [r.get() for r in results]
 
-    df = pd.DataFrame.from_records(result_list, columns=('root', 'control', 'p_score', 'p_identity', 'p_gaps', 'p_len', 'b_score', 'b_identity', 'b_gaps', 'b_len', 'c_score', 'c_identity', 'c_gaps', 'c_len'))
+    result_list = [r for r in result_list if r is not None]
+    df = None
+    if result_list:
+        df = pd.concat(result_list)
     return(df)    
 
 
@@ -404,22 +447,22 @@ def main():
 
 
     from datetime import datetime
-    
+
     print("# Created by distances.py on {}".format(datetime.now().strftime("%Y-%m-%d %H:%M")))
     print("# 'score' refers to Needleman-Wunsch pairwise alignment score.")
     print("# 'score' refers to Needleman-Wunsch global alignment between the infered founder sequence and the actual founder.")
     print("# The Needleman-Wunsch algorithm is implemented in the Emboss toolkit.")
     print("# The \"EDNAFULL\" scoring matrix is used to score DNA comparisons with a gap open penalty of 10.0 and gap extension penalty of 0.5.")
-    print("# p_score = score btwn prank inferred and actual founder")
-    print("# p_gaps = # gap positions between prank inferred and actual founder")
-    print("# p_identity = # identical sites between prank inferred and actual founder")
-    print("# p_len = avg. length of prank inferred founder")
-    print("# b_score = score btwn beast inferred and actual founder")
-    print("# b_gaps = mean # gap positions between Beast high-posterior inferred and actual founder")
-    print("# b_identity = avg. # sites between Beast high-posterior inferred and actual founder")
-    print("# b_len = avg. length of beast inferred founder")
+    
+    print("# dir = sample directory")
+    print("# method = method of founder inference (consensus, beast, prank_dna, and prank_codon)")
+    print("# nw_score = score between inferred and actual founder")
+    print("# pct_gaps = # gap positions between inferred and actual founder")
+    print("# pct_identity = # identical sites between inferred and actual founder")
+    print("# len = avg. length of inferred founder")
             
-    tbl.to_csv(sys.stdout, index=False, header=True)
+    if tbl:
+        tbl.to_csv(sys.stdout, index=False, header=True)
     
 if __name__ == '__main__':
     main()
