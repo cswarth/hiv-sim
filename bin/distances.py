@@ -63,7 +63,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False)
     parser.add_argument('-d', '--debug', dest='debug', action='store_true', default=False)
-    parser.add_argument('-p', '--processes', default=15)
+    parser.add_argument('-p', '--processes', default=2)
     return parser.parse_args()
 
 def needle_records(fh):
@@ -102,8 +102,9 @@ NWScore = namedtuple('NWScore', 'score identity gaps length')
 def needle_score(seq1, seq2):
     """Calculate needlman-wunsch score for aligning two sequences.
     """
-    #yield NWScore(0,0,0,0)
-    #return
+    # yield NWScore(0,0,0,0)
+    # return
+    tempfile.tempdir = "./tmp"
     ntf = tempfile.NamedTemporaryFile
     with ntf(prefix='seq1', delete=True) as fh1, \
          ntf(prefix='seq2', delete=True) as fh2, \
@@ -118,7 +119,7 @@ def needle_score(seq1, seq2):
         # NB the -gapopen and -gapextend parameters are NOT optional!
         # needle claims default values for these, but will not run if they are not specified.
         # same with -outfile.
-        cmd = ['needle', '-gapopen', '10.0', '-gapextend', '0.5',  
+        cmd = ['srun', 'needle', '-gapopen', '10.0', '-gapextend', '0.5',  
                '-outfile',  outfile.name,
                fh1.name, fh2.name]
         logging.info(' '.join(cmd))
@@ -374,7 +375,7 @@ def _process_dir(founder, dir):
 
     return df
 
-def process_founder(founder, dirs, nproc=5):
+def process_founder(founder, dirs, nproc):
     """Calculate distance between founder & inferred sequences under directories 'dirs'
 
     This routine calculates distance measures between 'founder' and 
@@ -421,8 +422,20 @@ def main():
     logging.info("Info")
     logging.debug("Debug")
 
+    from datetime import datetime
 
+    print("# Created by {} on {}".format(os.path.basename(__file__), datetime.now().strftime("%Y-%m-%d %H:%M")))
     
+    print("# dir = sample directory")
+    print("# method = method of founder inference (consensus, beast, prank_dna, and prank_codon)")
+    print("# nw_score = Needleman-Wunsch global alignment between the infered founder sequence and the actual founder.")
+    print("# 			The Needleman-Wunsch algorithm is implemented in the Emboss toolkit.")
+    print("# 			The \"EDNAFULL\" scoring matrix is used to score DNA comparisons with a gap open penalty of 10.0 and gap extension penalty of 0.5.")
+    print("# pct_gaps = proportion gap positions between inferred and actual founder")
+    print("# pct_identity = proportion identical sites between inferred and actual founder")
+    print("# len = avg. length of inferred founder")
+            
+    first = True
     tbl = None
     for root, dirnames, filenames in os.walk('runs'):
         if 'founder.fa' in filenames:
@@ -442,26 +455,13 @@ def main():
 
             # compare samples taken from downstream lineages to the founder sequence
             df = process_founder(founder, dirs, nproc=int(a.processes))
-            tbl = df if tbl is None else tbl.append(df, ignore_index=True)
-            dirnames = []  # prune rest of tree.
 
-
-    from datetime import datetime
-
-    print("# Created by distances.py on {}".format(datetime.now().strftime("%Y-%m-%d %H:%M")))
-    print("# 'score' refers to Needleman-Wunsch pairwise alignment score.")
-    print("# 'score' refers to Needleman-Wunsch global alignment between the infered founder sequence and the actual founder.")
-    print("# The Needleman-Wunsch algorithm is implemented in the Emboss toolkit.")
-    print("# The \"EDNAFULL\" scoring matrix is used to score DNA comparisons with a gap open penalty of 10.0 and gap extension penalty of 0.5.")
-    
-    print("# dir = sample directory")
-    print("# method = method of founder inference (consensus, beast, prank_dna, and prank_codon)")
-    print("# nw_score = score between inferred and actual founder")
-    print("# pct_gaps = # gap positions between inferred and actual founder")
-    print("# pct_identity = # identical sites between inferred and actual founder")
-    print("# len = avg. length of inferred founder")
+            df.to_csv(sys.stdout, index=False, header=first)
+            first = False
             
-    if tbl:
+            dirnames = []  # prune rest of tree.
+            
+    if tbl is not None:
         tbl.to_csv(sys.stdout, index=False, header=True)
     
 if __name__ == '__main__':
