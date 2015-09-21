@@ -1,0 +1,164 @@
+#!/usr/bin/env scons
+# -*- coding: utf-8 -*-
+
+'''
+Infer founder sequence from actual CAPRISA sequences.
+
+This script runs BEAST and PRANK on eahc of the CAPRISA input files.
+Because these are deep-sequenceing results with many duplicates, the
+sequences are de-duplicated before using them to infer a tree with
+BEAST.  The MCC tree calculated from BEAST is use as a guid tree for
+PRANK -DNA.
+'''
+
+
+
+# Simulations for lcfit
+import os
+import os.path
+import glob
+import tempfile
+
+from nestly import Nest
+from nestly.scons import SConsWrap
+from SCons.Script import Environment
+from SCons.Action import ActionFactory
+
+environ = os.environ.copy()
+
+env = Environment(ENV=environ)
+env.PrependENVPath('PATH', '../bin')
+env['PRANK']='/home/cwarth/src/matsen/prank/src/prank'
+env['SANTAJAR']= os.path.expanduser('~matsengrp/local/lib/santa.jar')
+env['SANTAJAR']= os.path.expanduser('~/src/matsen/santa-dev/dist/santa.jar')
+
+env['LONGEVITY'] = 25000	# number of generations to run SANTA simulation.
+env['POPULATION'] = 1000	# static simulated population size
+
+n = Nest(base_dict={})
+w = SConsWrap(n, 'build', alias_environment=env)
+
+datapath = "../sample_data/CAP225/binned/cons/"
+
+# Function to be called to convert each value to a directory label.
+def toplevel_label(n):
+    return os.path.splitext(os.path.basename(n))[0]
+
+n.add('multiple_alignment', [f for f in glob.glob(datapath + '/*_aln.fa') ], label_func=toplevel_label)
+
+# remove duplicate sequences.
+@w.add_target_with_env(env)
+def dedup(env, outdir, c):
+    target = os.path.join(outdir, 'sequences_aln.fa'.format(**c))
+    return env.Command(target,
+                           [c['multiple_alignment']],
+                           "seqmagick convert --deduplicate-sequences ${SOURCE} ${TARGET}")[0]
+
+
+# create the BEAST config file from sequences extracted from two patient simulations
+@w.add_target_with_env(env)
+def config_beast(env, outdir, c):
+    target = os.path.join(outdir, 'beast_in.xml')
+        
+    cmd = ("mkbeast_rv217.py  --template  ${SOURCES[0]} ${SOURCES[1]}  >${TARGET}")
+
+    return env.Command(target,
+                       [ '../templates/relaxed-clock.xml', c['dedup']],
+                       cmd)
+
+
+@w.add_target_with_env(env)
+def runbeast(env, outdir, c):
+    target = [ os.path.join(outdir, 'ancestralSequences.log'),
+               os.path.join(outdir, 'beastout.log'),
+               os.path.join(outdir, 'beastout.trees'),
+               os.path.join(outdir, 'beastcmd.log') ]
+    return env.Command(target,
+                       c['config_beast'],
+                       "srun --output=srun.log beast -working -overwrite -beagle " + os.path.abspath(str(c['config_beast'][0])) + " >${TARGETS[3]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
+
+@w.add_target_with_env(env)
+def mcc(env, outdir, c):
+    # select a burnin period of 60% of the total number of sampled trees..
+    return env.Command(os.path.join(outdir, 'mcc.tree'),
+                        c['runbeast'][2],
+                       'treeannotator -burnin 200 ${{SOURCES}} >${{TARGET}}'.format(**c))
+
+# nexus2newick fails to parse node names with '/' in them.
+# prank fails to parse newick trees sith "'" (\047) in them
+@w.add_target_with_env(env)
+def prank_guidetree(env, outdir, c):
+    return env.Command(os.path.join(outdir, 'guidetree.tree'),
+                        c['mcc'],
+                       'nexus2newick.py  ${SOURCES} | tr -d "\047" >${TARGET} ')
+
+@w.add_target_with_env(env)
+def prank_dna(env, outdir, c):
+    outdir = os.path.join(outdir, 'prank_dna')
+    target = [ os.path.join(outdir, 'prank.best.anc.fas'),
+               os.path.join(outdir, 'prankcmd.log') ]
+
+    env['output'] = os.path.join(outdir, 'prank')
+    cmd = ("srun prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -DNA >${TARGETS[1]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
+    return env.Command(target,
+                       [ c['dedup'], c['prank_guidetree'] ],
+                       [
+                           Mkdir(outdir),
+                           cmd
+                       ])
+
+
+# # https://github.com/cswarth/hiv-sim/issues/2
+# # Try out codon PRANK
+# @w.add_target_with_env(env)
+# def prank_codon(env, outdir, c):
+#     outdir = os.path.join(outdir, 'prank_codon')
+#     target = [ os.path.join(outdir, 'prank.best.anc.fas'),
+#                os.path.join(outdir, 'prankcmd.log') ]
+
+#     env['output'] = os.path.join(outdir, 'prank')
+#     cmd = ("srun prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -codon >${TARGETS[1]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
+#     return env.Command(target,
+#                        [ c['multiple_alignment'], c['prank_guidetree'] ],
+#                        [
+#                            Mkdir(outdir),
+#                            cmd
+#                        ])[0]
+
+
+# # Align the sequences to an HIV-1 full-length reference.
+# # The bam file produced by codon-sw cannot be imported into
+# # IGV. I have not investiated in depth other than to note that
+# # if we convert the bam file to SAM, then back to BAM, it seems
+# # to then import into IGV without problems.
+# @w.add_target_with_env(env)
+# def bamfile(env, outdir, c):
+#     target = os.path.join(outdir, 'sample.bam')
+#     return env.Command(target,
+#                        [ c['sample'] ],
+#                        [
+#                            '~/overbaugh/prep_drm/bin/codon-sw -hpfs -7 -q  references/NC_001802.fasta ${{SOURCE}} {outdir}/temp;'.format(outdir=outdir),
+#                            #'samtools view -bSh  <(samtools view -h {outdir}/temp) >${{TARGET}};'.format(outdir=outdir),
+#                            'samtools view -h {outdir}/temp | samtools view -bSh - >${{TARGET}};'.format(outdir=outdir),
+#                            'rm -f {outdir}/temp'.format(outdir=outdir)
+#                        ])
+
+
+# @w.add_target_with_env(env)
+# def sortedbam(env, outdir, c):
+#     target = os.path.join(outdir, 'sample.sorted.bam')
+#     return env.Command(target,
+#                        [ c['bamfile'] ],
+#                        [ 
+#                          'samtools sort ${{SOURCE}} {}'.format(os.path.splitext(target)[0])
+#                        ])
+
+
+
+# @w.add_target_with_env(env)
+# def bamindex(env, outdir, c):
+#     index = os.path.join(outdir, 'sample.sorted.bam.bui')
+#     return env.Command(index,
+#                        [ c['sortedbam'] ],
+#                        [ 'samtools index ${SOURCE}' ])
+
