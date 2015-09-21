@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 """
-Classify mutations for read groups in a BAM file,
-using mutations identified by a GFF3 file
+Measure distances from inferred founders in BEAST trait file to 
+actual founder sequence.
+
 """
 import pkg_resources
 # Require scipy version > 0.12.0 in order to use logsumexp with a second argument.

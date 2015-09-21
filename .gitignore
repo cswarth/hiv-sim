@@ -6,3 +6,11 @@
 /sims/leftlineage.fa
 /sims/distances.csv
 /sims/patient1_santa_config.xml
+/.gdbinit
+*/.sconsign.dblite
+/analysis/*.pdf
+/analysis/*.png
+/analysis/*.svg
+/web/.ipynb_checkpoints/
+*/build/
+*/scons.out

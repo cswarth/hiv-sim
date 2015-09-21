@@ -1,32 +1,29 @@
 #!/usr/bin/env scons
 # -*- coding: utf-8 -*-
 
-''' 
-
-Scons file for driving Nestly to create a hierachy of directories
-and control files that can explore various paramter settings of Santa
+'''
+Scons file for driving Nestly to create a hierarchy of directories
+and control files that can explore various parameter settings of Santa
 and BEAST.
 
-The main idea is to have a hierarchy of directories that vary the
-branch lengths of simulated sibling HIV clades.  In addition for each
+The main idea is to create a hierarchy of directories that vary the
+branch lengths of simulated sibling HIV clades.  (It is also posible to
 pair of siblings, we want to vary BEAST parameters to explore the
-effect of various evolutionary clock models on the inferrence of
-ancestral sequences.
+explore various evolutionary clock models, but only a single clock model
+is used in the code below.)
 
-We start with a single sequence fro mwhich we simulat multiple
-generations of HIV evolution.  We sample this evolutionaery history at
+We start with a single sequence from which we simulate multiple
+generations of HIV evolution.  We sample this evolutionary history at
 a certain timepoint, say at generation 400, to create patient1.  Then
 we sample the same evolutionary history at a several different
 timepoints, say 100, 500, 1000, and 10000 generations, to create
 patient2.  Next we create a BEAST configuration that combines the
 samples from patient1 ad patient2 and ask it to infer the ancestral
 sequence at the MRCA of these sequences.
-
 '''
 
 
 
-# Simulations for lcfit
 import os
 import os.path
 
@@ -45,7 +42,7 @@ environ['SLURM_TIMELIMIT'] = '0-6'
 env = Environment(ENV=environ)
 env.PrependENVPath('PATH', '../bin')
 
-n = Nest(base_dict={'n_sites': 1000})
+n = Nest(base_dict={})
 w = SConsWrap(n, 'runs', alias_environment=env)
 
 env['SANTAJAR']= os.path.abspath('../lib/santa.jar')
@@ -315,7 +312,7 @@ def prank_guidetree(env, outdir, c):
                        'nexus2newick.py ${SOURCES} | tr -d "\047" >${TARGET} ')
 
 @w.add_target_with_env(env)
-def print_dna(env, outdir, c):
+def prank_dna(env, outdir, c):
     outdir = os.path.join(outdir, 'prank_dna')
     target = [ os.path.join(outdir, 'prank.best.anc.fas'),
                os.path.join(outdir, 'prankcmd.log') ]
@@ -339,7 +336,7 @@ def prank_codon(env, outdir, c):
                os.path.join(outdir, 'prankcmd.log') ]
 
     env['output'] = os.path.join(outdir, 'prank')
-    cmd = ("srun prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -DNA -codon >${TARGETS[1]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
+    cmd = ("srun prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -codon >${TARGETS[1]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
     return env.Command(target,
                        [ c['multiple_alignment'], c['prank_guidetree'] ],
                        [

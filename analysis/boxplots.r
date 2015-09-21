@@ -7,8 +7,16 @@ suppressMessages(library(ggplot2))
 
 theme_set(theme_bw(16) + theme(strip.background = element_blank()))
 
-agg <- read.csv("../sims/tmp.csv", as.is = TRUE, comment='#')
-
+agg <- read.csv("../sims/distances.csv", as.is = TRUE, comment='#')
+agg = agg %>%
+    extract(dir, c('replicate', 'tevent', 'donor', 'recipient'),
+            'replicate_(\\d+)/xmit_(\\d+)/dtst_(.*)/rtsi_(\\d+)',
+            remove=TRUE, convert=TRUE)
+##   nw_score pct_identity     pct_gaps  len      method replicate tevent donor recipient
+## 1 13597.00    0.9967105 0.0007309942 2736   consensus         0   1000     0      1400
+## 2 12821.43    0.9555609 0.0151187905 2778       beast         0   1000     0      1400
+## 3 12991.50    0.9697632 0.0043715847 2745   prank_dna         0   1000     0      1400
+## 4 12967.50    0.9683060 0.0054644809 2745 prank_codon         0   1000     0      1400
 
 ratio.by.replicate.bxplot <- function(agg) {
     df <- agg %>%
@@ -68,11 +76,9 @@ consensus_ratio.by.xmit.bxplot <- function(agg) {
 scores.by.method.density <- function(agg) {
     # plot density of scores
     agg %>%
-        extract(root, c('replicate', 'tevent', 'donor', 'recipient'), 'replicate_(\\d+)/(.*)/(.*)/(.*)', remove=TRUE, convert=TRUE) %>%
-        gather(measure, score, c(p_score, b_score, c_score)) %>%
-        ggplot(aes(x=score)) +
+        ggplot(aes(x=nw_score)) +
         ggtitle("Density of scores by inference method") +
-        geom_density(aes(fill=factor(measure)), size=1, alpha=0.3) +
+        geom_density(aes(fill=factor(method)), size=1, alpha=0.3) +
         scale_fill_discrete(name="Inference\nmethod", labels=c("PRANK","Beast", "Consensus"))
 }
 

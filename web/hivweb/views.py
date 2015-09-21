@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+from __future__ import print_function
 """With code liberally cribbed from Connor McCoy's 'sidbweb' application.
 
 """
@@ -257,6 +258,7 @@ from collections import OrderedDict
 import brewer2mpl
 
 titles = {
+    'nw_score':'nw_score',
     'p_score':'Score of PRANK inferred founder',
     'b_score':'Score of Beast inferred founder',
     'ratio':'Prank / Beast ratio',
@@ -273,6 +275,7 @@ titles = {
 }
     
 measures = {
+    'nw_score':'nw_score',
     'p_score':'PRANK Score',
     'b_score':'BEAST Score',
     'ratio':'Prank / beast ratio',
@@ -409,23 +412,17 @@ def load_data():
 
     # split the 'root' column into separate columns
     # see http://pandas.pydata.org/pandas-docs/stable/generated/pandas.core.strings.StringMethods.extract.html
-    s = data.root.str.extract('/replicate_(?P<replicate>\d+)/(?P<xmit>\d+)/(?P<dtsi>.+)/(?P<rtsi>\d+)')
+    s = data.dir.str.extract('/replicate_(?P<replicate>\d+)/xmit_(?P<xmit>\d+)/dtst_(?P<dtsi>.+)/rtsi_(?P<rtsi>\d+)')
 
     # assert that the extract worked correctly and there are no NANs in the resulting data frame.
     assert(not s.isnull().any(1).any())
 
     # join new columns and drop old 'root' column
-    data = data.join(s).drop(['replicate', 'root'], axis=1)
+    data = data.join(s).drop(['replicate', 'dir'], axis=1)
 
     # take the average across replicates
     data = data.groupby(['xmit', 'dtsi', 'rtsi']).mean()
     data.reset_index(inplace=True)
-
-    # calculate the rank of the beast scores
-    data['b_rank'] = rank_values(data.b_score)
-    data['p_rank'] = rank_values(data.p_score)
-
-    data['ratio'] = data.p_score/data.b_score
 
     # add number of replicates as a custom attribute of the data frame
     data.nreplicates = len(set(s.replicate))
@@ -448,7 +445,7 @@ def multitile():
     args = flask.request.args
 
     # Get all the form arguments in the url with defaults
-    measure = getitem(args, 'measure', 'b_score')
+    measure = getitem(args, 'measure', 'nw_score')
     transmission = getitem(args, 'event', xmit_events[0])
     if len(transmission) == 0:
         transmission = '300'
@@ -461,8 +458,8 @@ def multitile():
 
     # Get all the form arguments in the url with defaults
     # display beast scores by default if no other measure is selected
-    outer_measure = getitem(args, 'outer_measure', 'b_score')
-    inner_measure = getitem(args, 'inner_measure', 'b_score')
+    outer_measure = getitem(args, 'outer_measure', 'nw_score')
+    inner_measure = getitem(args, 'inner_measure', 'nw_score')
     inner_scale = outer_scale = reds
     if outer_measure == inner_measure:
         outer_scale = inner_scale
@@ -482,9 +479,9 @@ def multitile():
             dtime_transmission = data.dtsi,
             dtime_infection = data.rtsi,
             transmission = data.xmit,
-            prank = data.p_score, 
-            beast=data.b_score,
-            ratio=data.ratio,
+            #prank = data.p_score, 
+            #beast=data.b_score,
+            #ratio=data.ratio,
             n=len(data),
         )
     )
@@ -503,6 +500,8 @@ def multitile():
 
     tap = TapTool(action=OpenURL(url=url))
     hover = HoverTool(tooltips=tooltips)
+    print("inner_measure = {}".format(inner_measure), file=sys.stderr)
+    print("dict keys = {}".format([k for k in data.keys()], file=sys.stderr))
     fig = figure(title=titles[measure].format(min=min(data[measure]), max=max(data[measure])),
                  x_range=x_range, y_range=y_range,
                  x_axis_location="below", plot_width=800, plot_height=600,

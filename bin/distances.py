@@ -2,9 +2,9 @@
 '''
 Uses 'needle' program from Emboss package
 (http://emboss.sourceforge.net/download/) to measure distance between
-actual founder sequence and inferred founder sequence. the distace is
+actual founder sequence and inferred founder sequence. The distace is
 measured as the needleman-munsch score for a pairwise alignment.  We
-don't hae fast N-W alignment software accessible in Python so we
+don't have fast N-W alignment software accessible in Python so we
 actually call the 'needle'' program and parse the results to extract the
 score we need.
 
@@ -375,6 +375,18 @@ def _process_dir(founder, dir):
 
     return df
 
+
+# true if need to print header
+first = True
+
+
+def callback(df):
+    global first
+    if df is not None:
+        df.to_csv(sys.stdout, index=False, header=first)
+        first = False
+
+
 def process_founder(founder, dirs, nproc):
     """Calculate distance between founder & inferred sequences under directories 'dirs'
 
@@ -389,19 +401,19 @@ def process_founder(founder, dirs, nproc):
     global a
     global columns
     if a.debug:
-        result_list = [_process_dir(founder, dir) for dir in dirs]
+        map(callback, [_process_dir(founder, dir) for dir in dirs])
     else:
         pool = multiprocessing.Pool(nproc)
-        results = [pool.apply_async(_process_dir, args = (founder, dir)) for dir in dirs]
+        results = [pool.apply_async(_process_dir, args = (founder, dir), callback=callback) for dir in dirs]
         pool.close()
         pool.join()
-        result_list = [r.get() for r in results]
+        #result_list = [r.get() for r in results]
 
-    result_list = [r for r in result_list if r is not None]
-    df = None
-    if result_list:
-        df = pd.concat(result_list)
-    return(df)    
+    # result_list = [r for r in result_list if r is not None]
+    # df = None
+    # if result_list:
+    #     df = pd.concat(result_list)
+    # return(df)    
 
 
 def main():
@@ -456,8 +468,8 @@ def main():
             # compare samples taken from downstream lineages to the founder sequence
             df = process_founder(founder, dirs, nproc=int(a.processes))
 
-            df.to_csv(sys.stdout, index=False, header=first)
-            first = False
+            # df.to_csv(sys.stdout, index=False, header=first)
+            # first = False
             
             dirnames = []  # prune rest of tree.
             

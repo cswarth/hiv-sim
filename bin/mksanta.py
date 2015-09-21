@@ -77,7 +77,7 @@ def main():
 
     records = list(SeqIO.parse(a.fasta, "fasta"))
 
-    # extract generation and cuulative generation from each sequence.
+    # extract generation and cumulative generation from each sequence.
     generation = set([int(r.id.split('|')[0].split('_')[1]) for r in records])
     cumulative = set([int(r.id.split('|')[3]) for r in records])
     assert(len(generation) == 1)
