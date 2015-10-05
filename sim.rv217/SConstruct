@@ -43,7 +43,7 @@ import SCons.Util
 # quick succession.  The Wait() action is meant to wait for a file to become
 # locally visible after running a command on the cluster (via srun or salloc).
 #
-# Wait() is usage is typically used like,
+# Wait() usage is typically,
 # 	target='output.file'
 # 	env.Command(target, 'source.file',
 #   	        [ "srun some-command <${TARGET}",
@@ -73,7 +73,7 @@ def wait_func(dest):
         dest = [dest]
     for entry in dest:
         count = 0
-        limit = 3
+        limit = 10
         while not os.path.isfile(entry) or os.stat(entry).st_size == 0:
             print("waiting for {}...".format(entry))
             time.sleep(2)
@@ -102,7 +102,7 @@ w = SConsWrap(n, 'build', alias_environment=env)
 n.add('mutationrate', ['2.5E-5', '1.0E-5'])
 #n.add('mutationrate', ['2.5E-5'])
 
-n.add('model', ['indel', 'noindel', 'purifying_noindel',  'frequency_noindel'])
+n.add('model', ['indel', 'noindel', 'purifying_noindel',  'purifying_indel', 'frequency_noindel', 'frequency_indel'])
 #n.add('model', ['indel', 'noindel', 'purifying_indel', 'purifying_noindel', 'frequency_indel', 'frequency_noindel'])
 #n.add('model', ['indel'])
 
@@ -138,12 +138,35 @@ n.add('transmission', [700, 900, 1000, 1200, 1500, 5000,  20000])
 ## This makes it easier for the distance.py script to grab it for comparison.
 @w.add_target_with_env(env)
 def sample(env, outdir, c):
-    founder = os.path.join(outdir, 'sample.fa'.format(**c))
-    cmd = ('fasta_sample.py --fasta-file ${SOURCES[0]} --n-sequences 12 --pattern "_${transmission}_" >${TARGET}')
-
-    return env.Command(founder,
+    target = os.path.join(outdir, 'sample.fa'.format(**c))
+    fasta_sample = r'fasta_sample.py --fasta-file ${{SOURCES[0]}} --n-sequences 10 --pattern "_{}_"'
+    mogrify = r'seqmagick convert --pattern-replace "^([^\|]*)\|.*$" "\1|{}" - -'
+    samplecmd = fasta_sample + '|' + mogrify 
+    return env.Command(target,
                 [ c['santa_lineage'] ],
-                [ cmd ])[0]
+                [
+                    samplecmd.format(c['transmission'], '1M|05WG|NFLG|2011/11/10') + ' >${TARGET}',
+                    samplecmd.format(str(c['transmission']+500), '6M|08RH|RH|2012/03/02') + ' >>${TARGET}',
+#                    r'fasta_sample.py --fasta-file ${SOURCES[0]} --n-sequences 10 --pattern "_${transmission}_" | seqmagick convert --pattern-replace "^([^\|]*)\|.*$" "\1|1M|05WG|NFLG|2011/11/10" - - >${TARGET}',
+#                    r'fasta_sample.py --fasta-file ${SOURCES[0]} --n-sequences 12 --pattern "_' + str(c['transmission']+500) + r'_" | seqmagick convert --pattern-replace "^([^\|]*)\|.*$" "\1|6M|08RH|RH|2012/03/02" - - >>${TARGET}'
+                ])[0]
+
+
+@w.add_target_with_env(env)
+def prank_unguided(env, outdir, c):
+    outdir = os.path.join(outdir, 'prank_unguided')
+    target = [ os.path.join(outdir, 'prank.best.anc.fas'),
+               os.path.join(outdir, 'prankcmd.log') ]
+    env['output'] = os.path.join(outdir, 'prank')
+    cmd = ("srun prank -d=${SOURCES[0]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -DNA >${TARGETS[1]} 2>&1")
+    return env.Command(target,
+                       [ c['sample'] ],
+                       [
+                           Mkdir(outdir),
+                           cmd,
+                           Wait(target)
+                       ])
+
 
 
 # align sample
@@ -164,11 +187,11 @@ def multiple_alignment(env, outdir, c):
 def config_beast(env, outdir, c):
     target = os.path.join(outdir, 'beast_in.xml')
         
-    cmd = ("mkbeast.py  --template  ${SOURCES[0]} ${SOURCES[1]}  >${TARGET}")
+    cmd = ("mkbeast_rv217.py  --template  ${SOURCES[0]} ${SOURCES[1]}  >${TARGET}")
 
     return env.Command(target,
-                       [ '../templates/relaxed-clock.xml', c['multiple_alignment']],
-                       cmd)
+                       [ '../templates/beast_vidd_template.xml', c['multiple_alignment']],
+                       cmd)[0]
 
 
 @w.add_target_with_env(env)
@@ -179,7 +202,8 @@ def runbeast(env, outdir, c):
                os.path.join(outdir, 'beastcmd.log') ]
     return env.Command(target,
                        c['config_beast'],
-                       [ "srun --output=srun.log beast -working -overwrite -beagle " + os.path.abspath(str(c['config_beast'][0])) + " >${TARGETS[3]} 2>&1",
+                       # [ "srun --chdir={} --output=srun.log beast -overwrite -beagle {} >${{TARGETS[3]}} 2>&1".format(outdir, os.path.abspath(str(c['config_beast']))),
+                       [ "srun --chdir={outdir} --output={outdir}/beastcmd.log beast -overwrite -beagle beast_in.xml >{outdir}/srun.log 2>&1".format(outdir=outdir),
                          Wait(target)
                        ])
 

@@ -32,10 +32,11 @@ from Bio import SeqIO
 from collections import defaultdict
 import getpass
 from datetime import datetime, date, timedelta
-
+import calendar
 import sys
 import argparse
 import os.path
+import operator
 
 # patients dict stores instance of class Patient keyed by patient
 # id string.  we create a new one when we run into a patient id
@@ -45,21 +46,45 @@ import os.path
 #
 patients = defaultdict()
 
-startDate = datetime.strptime("6/13/1994", "%m/%d/%Y").date()
+def dayofyear(value):
+    t = value.timetuple()
+    return "{}".format(t.tm_year+(t.tm_yday-1)/(366.0 if calendar.isleap(t.tm_year) else 365.0))
 
-def render(patients, outgroup, template, fp):
+def dateformat(value, format='%d/%m/%Y'):
+    return value.strftime(format)
+
+def deltayears(value):
+    return value.total_seconds()/(60*60*24*365)
+
+def render(params, template, fp):
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(searchpath="/"))
+    env.filters['dayofyear'] = dayofyear
+    env.filters['deltayears'] = deltayears
+    env.filters['dateformat'] = dateformat
+    
     # Alias str.format to strformat in template
     env.filters['strformat'] = str.format
     template = env.get_template(os.path.abspath(template))
-    template.stream(
-            patients=patients,
-            outgroup=outgroup,
-            date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            user=getpass.getuser(),
-            command=" ".join(sys.argv),
-            workdir=os.getcwd()).dump(fp)
 
+    # define additional values available in the template
+    vars = dict(date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                  user=getpass.getuser(),
+                  command=" ".join(sys.argv),
+                  workdir=os.getcwd(),
+                  now=datetime.now(),
+                  timedelta=timedelta)
+    # merge in the values passed in to this routine.
+    vars.update(params)
+    
+    template.stream(**vars).dump(fp)
+
+def str2timedelta(s):
+    m = re.match(r'(\d+)M$', s)
+    if m:
+        delay = 30 * int(m.group(1))
+    else:
+        delay = 30 * 12 
+    return(timedelta(days=delay))
 
     
 def processFasta(datafile, generations=None):
@@ -79,15 +104,18 @@ def processFasta(datafile, generations=None):
             # extract the patient id and generation from the fasta name.
             fields = record.id.split('|')
             patientId = fields[0]
+            timePoint = fields[1] if len(fields) > 0 else "0"
             sampleDate = fields[4] if len(fields) > 3 else "0"
             taxon = record
 
             collectiondate = patient[sampleDate]
             if not collectiondate:
                 collectiondate['taxa'] = []
-                collectiondate['date'] = sampleDate
+                collectiondate['date'] = datetime.strptime(sampleDate, '%Y/%m/%d')
+                collectiondate['delta'] = str2timedelta(timePoint)
 
             collectiondate['taxa'].append(taxon)
+    
     return(patientId, patient)
 
 
@@ -110,16 +138,13 @@ def build_parser():
         # return value
         return str.split(',')
 
-    def existing_file(arg):
+    def existing_file(fname):
         """
         Argparse type for an existing file
         """
-        fname,generation = arg.partition(":")[::2]
         if not os.path.isfile(fname):
             raise ValueError("Invalid file: " + str(fname))
-        if generation == '':
-            generation = None
-        return [fname,generation]
+        return [fname,None]
 
     parser = argparse.ArgumentParser(description=__doc__)
 
@@ -147,9 +172,21 @@ def main(args=sys.argv[1:]):
     
     patients = dict([processFasta(*datafile) for datafile in a.datafiles])
 
+
+    samples = [sample for p in patients.values() for sample in p.values()]
+    dates = [s['date'] for s in samples]
+
+    earliest_timepoint = min([ s['date'] - s['delta'] for s in samples])
+    latest_timepoint = max(dates)
+    
     outgroup = list(SeqIO.parse(a.outgroup, "fasta")) if a.outgroup else []
 
-    render(patients, outgroup, a.template, sys.stdout)
+    params = dict(patients=patients,
+                  outgroup=outgroup,
+                  earliest_timepoint=earliest_timepoint,
+                  latest_timepoint=latest_timepoint)
+
+    render(params, a.template, sys.stdout)
 
 
 

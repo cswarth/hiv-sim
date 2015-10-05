@@ -15,11 +15,62 @@ ay data.  It is processing real data from real patients.
 import os
 import os.path
 import glob
+import time
 
 from nestly import Nest
 from nestly.scons import SConsWrap
 from SCons.Script import Environment
 from SCons.Action import ActionFactory
+import SCons.Util
+
+# Running commands on the cluster sometimes has the unfortunate side-effect of
+# letting distributed filesystems get out of sync.  A file that is written on
+# the cluster may not be visible on local machines for several seconds.  This
+# doesn't happen all the time, and it can be difficult to demonstrate, but it
+# often occurs when local and cluster commands manipulate the same file in
+# quick succession.  The Wait() action is meant to wait for a file to become
+# locally visible after running a command on the cluster (via srun or salloc).
+#
+# Wait() usage is typically,
+# 	target='output.file'
+# 	env.Command(target, 'source.file',
+#   	        [ "srun some-command <${TARGET}",
+#    			   Wait(target)
+#				])
+#
+# This will cause the execution to pause after running 'some-command' until the target shows up on the local machine.
+# The target will be polled on a 2-second interval, and the command will fail if the target does not show up within about 10 seconds.
+
+
+
+
+def get_paths_str(dest):
+    # If dest is a list, we need to manually call str() on each element
+    if SCons.Util.is_List(dest):
+        elem_strs = []
+        for element in dest:
+            elem_strs.append('"' + str(element) + '"')
+        return '[' + ', '.join(elem_strs) + ']'
+    else:
+        return '"' + str(dest) + '"'
+
+# https://github.com/azatoth/scons/blob/73f996e59902d03ec432cc662252aac5fb72f1f8/src/engine/SCons/Defaults.py 
+def wait_func(dest):
+    SCons.Node.FS.invalidate_node_memos(dest)
+    if not SCons.Util.is_List(dest):
+        dest = [dest]
+    for entry in dest:
+        count = 0
+        limit = 3
+        while not os.path.isfile(entry) or os.stat(entry).st_size == 0:
+            print("waiting for {}...".format(entry))
+            time.sleep(2)
+            count = count + 1
+            if count >limit:
+                return 1
+    return 0
+
+Wait = ActionFactory(wait_func, lambda dir: 'Wait(%s)' % get_paths_str(dir))
 
 environ = os.environ.copy()
 
@@ -50,7 +101,7 @@ def config_beast(env, outdir, c):
     cmd = ("mkbeast_rv217.py  --template  ${SOURCES[0]} ${SOURCES[1]}  >${TARGET}")
 
     return env.Command(target,
-                       [ '../templates/relaxed-clock.xml', c['multiple_alignment']],
+                       [ '../templates/beast_vidd_template.xml', c['multiple_alignment']],
                        cmd)
 
 
@@ -62,7 +113,8 @@ def runbeast(env, outdir, c):
                os.path.join(outdir, 'beastcmd.log') ]
     return env.Command(target,
                        c['config_beast'],
-                       "srun --output=srun.log beast -working -overwrite -beagle " + os.path.abspath(str(c['config_beast'][0])) + " >${TARGETS[3]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
+                       [ "srun --output=srun.log beast -working -overwrite -beagle " + os.path.abspath(str(c['config_beast'][0])) + " >${TARGETS[3]} 2>&1",
+                         Wait(target)])
 
 @w.add_target_with_env(env)
 def mcc(env, outdir, c):
@@ -85,12 +137,13 @@ def prank_dna(env, outdir, c):
                os.path.join(outdir, 'prankcmd.log') ]
 
     env['output'] = os.path.join(outdir, 'prank')
-    cmd = ("srun prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -DNA >${TARGETS[1]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
+    cmd = ("srun prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -DNA >${TARGETS[1]} 2>&1")
     return env.Command(target,
                        [ c['multiple_alignment'], c['prank_guidetree'] ],
                        [
                            Mkdir(outdir),
-                           cmd
+                           cmd,
+                           Wait(target)
                        ])
 
 
@@ -103,12 +156,13 @@ def prank_codon(env, outdir, c):
                os.path.join(outdir, 'prankcmd.log') ]
 
     env['output'] = os.path.join(outdir, 'prank')
-    cmd = ("srun prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -codon >${TARGETS[1]} 2>&1 && while [ ! -s ${TARGETS[0]} ]; do echo waiting for ${TARGETS[0]}; sleep 2; done")
+    cmd = ("srun prank -d=${SOURCES[0]} -t=${SOURCES[1]} -o=${output} -quiet -once -f=fasta -showanc -showtree -showevents -codon >${TARGETS[1]} 2>&1")
     return env.Command(target,
                        [ c['multiple_alignment'], c['prank_guidetree'] ],
                        [
                            Mkdir(outdir),
-                           cmd
+                           cmd,
+                           Wait(target)
                        ])
 
 
