@@ -78,6 +78,8 @@ def render(params, template, fp):
     
     template.stream(**vars).dump(fp)
 
+# Convert a string like '1M', '3M', or '6M' to a timedelta object corresponding to number of months indicated in string.
+#
 def str2timedelta(s):
     m = re.match(r'(\d+)M$', s)
     if m:
@@ -87,16 +89,15 @@ def str2timedelta(s):
     return(timedelta(days=delay))
 
     
-def processFasta(datafile, generations=None):
+def processFasta(datafile):
     '''
     Read sequences from a FASTA file (datafile) and create a nested data structure thet organizaes the sequences by patient and sample date.
-    if 'generations' is set (list of strings or list of numbers?), only select sequences from the indicated generations.
     '''
     patient = defaultdict(dict)
     
     # define a regex to extract the generation number from the fasta id string
     # we use this to provide tip dates to BEAST.
-    patientId = ""
+    patientId = None
     with open(datafile, "rU") as handle:
     
         # for each fasta sequence in the data file, create a taxon node and a sequence node.
@@ -116,7 +117,10 @@ def processFasta(datafile, generations=None):
 
             collectiondate['taxa'].append(taxon)
     
-    return(patientId, patient)
+    if patientId is not None:
+        return(patientId, patient)
+    else:
+        raise Exception('Empty fasta file - {}'.format(datafile))
 
 
 
@@ -130,7 +134,7 @@ def build_parser():
         """
         Argparse a comm-seperated list
         """
-        # leave this here as a reminder of what I shold do to make the argument parsing more robust
+        # leave this here as a reminder of what I should do to make the argument parsing more robust
 
         # if sqrt != int(sqrt):
         #      msg = "%r is not a perfect square" % string
@@ -144,7 +148,7 @@ def build_parser():
         """
         if not os.path.isfile(fname):
             raise ValueError("Invalid file: " + str(fname))
-        return [fname,None]
+        return fname
 
     parser = argparse.ArgumentParser(description=__doc__)
 
@@ -170,8 +174,7 @@ def main(args=sys.argv[1:]):
     parser = build_parser()
     a = parser.parse_args()
     
-    patients = dict([processFasta(*datafile) for datafile in a.datafiles])
-
+    patients = dict([processFasta(datafile) for datafile in a.datafiles])
 
     samples = [sample for p in patients.values() for sample in p.values()]
     dates = [s['date'] for s in samples]
