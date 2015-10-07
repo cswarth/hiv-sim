@@ -254,11 +254,14 @@ boxplot <- function(tmp) {
         #filter(indel) %>%
         ggplot(aes(x=wpi, y=dist, fill=method)) +
         facet_grid(indel ~ fitness, labeller=facet_labeller) +
+        theme(axis.text.x = element_text(size = 8, colour = "red", angle = 45)) +
         geom_boxplot() +
+        xlab("Generations") +
+        ylab("N-W Pairwise Distance") +
+
         scale_fill_discrete(name="Method",
                             breaks=c("beast", "consensus", 'pcodon', 'pdna', 'unguided'),
                             labels=c("Beast", "Consensus", 'Prank codon', 'Prank dna', 'Prank unguided')) 
-
 }
 
 barplot <- function(tmp) {
@@ -347,14 +350,7 @@ write.alignment <- function(df) {
          })
 }
 
-tmp %>% mutate(diff=dist.consensus - dist.pdna) %>%
-    arrange(desc(diff)) %>% head(2) %>%
-    rowwise() %>%
-    do({
-        write.alignment(data.frame(.))
-        return(data.frame(., stringsAsFactors=FALSE))
-    })
-
+# plot lines across the meanvalue of each inference methid, grouped by rate, fitness, indel, wpi, and method
 lines_by_method <- function(tmp) {
     tmp %>%
         gather(method, dist, starts_with("dist.")) %>%

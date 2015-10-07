@@ -12,9 +12,6 @@ setwd("~/src/matsen/hiv-sim/sim.rv217/analysis")
 source("utils.r")
 
 
-png(file="lines_by_method.png", width=18, height=12, units = "in", res=300)
-lines_by_method(tmp)
-dev.off()
 
 founder <- founder.sequence()
 
