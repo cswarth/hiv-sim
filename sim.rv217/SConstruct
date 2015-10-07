@@ -73,12 +73,13 @@ def wait_func(dest):
         dest = [dest]
     for entry in dest:
         count = 0
-        limit = 10
+        limit = 20
         while not os.path.isfile(entry) or os.stat(entry).st_size == 0:
             print("waiting for {}...".format(entry))
             time.sleep(2)
             count = count + 1
-            if count >limit:
+            if count > limit:
+                print("failing wait for {}...".format(entry))
                 return 1
     return 0
 
@@ -131,7 +132,7 @@ def santa_lineage(env, outdir, c):
                           Copy('${TARGET}', '${OUTDIR}/santa_out.fa')
                        ])[0]
 
-n.add('transmission', [700, 900, 1000, 1200, 1500, 5000,  20000])
+n.add('transmission', [700, 900, 1000, 1200, 1500, 1700, 2000, 3000, 5000])
 #n.add('transmission', [700], create_dir=False)
 
 ## Extract the founder sequence from the santa config file into a FASTA file.
