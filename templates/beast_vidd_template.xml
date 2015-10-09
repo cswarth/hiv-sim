@@ -136,7 +136,7 @@
   <!-- The strict clock (Uniform rates across branches)                        -->
   <strictClockBranchRates id="branchRates">
     <rate>
-      <parameter id="clock.rate" value="1.0" lower="0.0"/>
+      <parameter id="clock.rate" value="1.3E-5" lower="0.0"/>
     </rate>
   </strictClockBranchRates>
 
@@ -194,7 +194,7 @@
     <scaleOperator scaleFactor="0.75" weight="3">
       <parameter idref="clock.rate"/>
     </scaleOperator>
-    <subtreeSlide size="48.0" gaussian="true" weight="15">
+    <subtreeSlide size="180.0" gaussian="true" weight="15">
       <treeModel idref="treeModel"/>
     </subtreeSlide>
     <narrowExchange weight="15">
@@ -242,6 +242,9 @@
 	<uniformPrior lower="0.0" upper="1.0">
 	  <parameter idref="frequencies"/>
 	</uniformPrior>
+	<logNormalPrior mean="1.3E-5" stdev="1.0" offset="0.0" meanInRealSpace="true">
+	  <parameter idref="clock.rate"/>
+	</logNormalPrior>
 	<oneOnXPrior>
 	  <parameter idref="exponential.popSize"/>
 	</oneOnXPrior>
@@ -269,6 +272,9 @@
       </column>
       <column label="rootHeight" sf="6" width="12">
 	<parameter idref="treeModel.rootHeight"/>
+      </column>
+      <column label="clock.rate" sf="6" width="12">
+	<parameter idref="clock.rate"/>
       </column>
       <parameter idref="exponential.popSize"/>
       <parameter idref="exponential.growthRate"/>
