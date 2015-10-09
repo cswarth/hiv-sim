@@ -317,7 +317,8 @@ distances.pwscore <- function(dir) {
 # taken as the median of all the pairwise distance between individual sequences
 diversity <- function(dir) {
     tryCatch({
-        readDNAStringSet(file.path(dir, 'sample_aln.fa')) %>%
+        file.path(dir, 'sample_aln.fa') %>%
+            readDNAStringSet() %>%
             as.matrix() %>% ape::as.alignment() %>% as.DNAbin() %>%
             dist.dna(pairwise.deletion=TRUE) %>% median() 
     }, error = function(e) {
