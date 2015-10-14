@@ -2,3 +2,15 @@ Explore the effect of different simulated population sizes on the
 quality of founder inference.  Note that the poulation being sized in
 that of the SANTA simulation, not of the effective population in
 Beast.
+
+A plot showing the effect of simulated population sizeon ffounder inference is in population.png.
+To reconstruct this plot,
+
+   $ scons
+   $ processdata.r
+   $ mkplot.r
+
+The 'scons' command will run the simulation and performa founder
+inference using beast and prank.  'processdata.r' will calculate
+distance from inferred founder to actual founder for all the simulated
+results.  'mkplot.r' will plrot the results and create a .png file.
