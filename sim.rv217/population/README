@@ -1,0 +1,4 @@
+Explore the effect of different simulated population sizes on the
+quality of founder inference.  Note that the poulation being sized in
+that of the SANTA simulation, not of the effective population in
+Beast.
