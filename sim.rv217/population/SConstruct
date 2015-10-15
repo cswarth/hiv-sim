@@ -79,7 +79,7 @@ Wait = ActionFactory(wait_func, lambda dir: 'Wait(%s)' % get_paths_str(dir))
 environ = os.environ.copy()
 
 env = Environment(ENV=environ)
-env.PrependENVPath('PATH', '../bin')
+env.PrependENVPath('PATH', '../../bin')
 env['PRANK']='/home/cwarth/src/matsen/prank/src/prank'
 env['SANTAJAR']= os.path.expanduser('~matsengrp/local/lib/santa.jar')
 env['SANTAJAR']= os.path.expanduser('~/src/matsen/santa-dev/dist/santa.jar')
@@ -103,7 +103,7 @@ n.add('indel_model', ['noindel', 'indel'])
 @w.add_target_with_env(env)
 def santa_config(env, outdir, c):
     return env.Command(os.path.join(outdir, "santa_config.xml"),
-                       ['../templates/santa_{selection_model}_{indel_model}.template'.format(**c), '../templates/HIV1C2C3.fasta'],
+                       ['../../templates/santa_{selection_model}_{indel_model}.template'.format(**c), '../../templates/HIV1C2C3.fasta'],
                        "mksanta.py  -p patient1 ${SOURCES}   >${TARGET}")[0]
 
 
@@ -193,7 +193,7 @@ def config_beast(env, outdir, c):
     cmd = ("mkbeast_rv217.py  --template  ${SOURCES[0]} ${SOURCES[1]}  >${TARGET}")
 
     return env.Command(target,
-                       [ '../templates/beast_{}.template'.format(c['clock_model']), c['multiple_alignment']],
+                       [ '../../templates/beast_{}.template'.format(c['clock_model']), c['multiple_alignment']],
                        cmd)[0]
 
 
