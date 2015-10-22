@@ -222,67 +222,6 @@ prank.distance <- function(dir, prank.model='codon', model='K80', founder=founde
 }
 
 
-facet_labeller <- function(variable,value) {
-    switch(variable,
-           indel=ifelse(value, "With indels", "Without indels"),
-           as.character(value))
-}
-
-scatterplot <- function(tmp) {
-    tmp %>% gather(method, dist, starts_with("dist.")) %>%
-        mutate(method=sub('dist.','',method)) %>%
-        mutate(method=factor(method)) %>%
-        filter(as.integer(as.character(wpi)) < 5000) %>%
-        ggplot(aes(x=wpi, y=dist, group=method, color=method)) +
-        facet_grid(indel ~ fitness, labeller=facet_labeller) +
-        geom_point(position = position_jitter(w = 0.1)) +
-        scale_color_discrete(name="Method",
-                            breaks=c("beast", "consensus", 'pcodon', 'pdna', 'unguided'),
-                            labels=c("Beast", "Consensus", 'Prank codon', 'Prank dna', 'Prank unguided')) 
-        # geom_smooth(method="lm", fill=NA) 
-}
-
-
-
-boxplot <- function(tmp) {
-    tmp %>% gather(method, dist, starts_with("dist.")) %>%
-        mutate(method=sub('dist.','',method)) %>%
-        mutate(method=factor(method)) %>%
-        filter(as.integer(as.character(wpi)) < 20000) %>%
-        mutate(wpi=factor(wpi)) %>%
-        #filter(indel) %>%
-        ggplot(aes(x=wpi, y=dist, fill=method)) +
-        facet_grid(indel ~ fitness, labeller=facet_labeller) +
-        theme(axis.text.x = element_text(size = 8, colour = "red", angle = 45)) +
-        geom_boxplot() +
-        xlab("Generations") +
-        ylab("N-W Pairwise Distance") +
-
-        scale_fill_discrete(name="Method",
-                            breaks=c("beast", "consensus", 'pcodon', 'pdna', 'unguided', 'relaxed', 'strict'),
-                            labels=c("Beast", "Consensus", 'Prank codon', 'Prank dna', 'Prank unguided', 'Beast relaxed', 'Beast strict')) 
-}
-
-
-
-barplot <- function(tmp) {
-    tmp %>% gather(method, dist, starts_with("dist.")) %>%
-        mutate(method=sub('dist.','',method)) %>%
-        mutate(method=factor(method)) %>%
-        filter(as.integer(as.character(wpi)) < 20000) %>%
-        mutate(wpi=factor(wpi)) %>%
-        #filter(indel) %>%
-        ggplot(aes(x=factor(wpi), y=dist, fill=method)) +
-        facet_grid(indel ~ fitness, labeller=facet_labeller) +
-        geom_bar(stat="identity", position=position_dodge()) +
-        geom_text(aes(y=dist, ymax=dist, label=method), position= position_dodge(width=0.9), vjust=-.5, color="black") +
-        scale_y_continuous("Distance") +
-        scale_x_discrete("Generations") +
-        scale_fill_discrete(name="Method",
-                            breaks=c("beast", "consensus", 'pcodon', 'pdna', 'unguided'),
-                            labels=c("Beast", "Consensus", 'Prank codon', 'Prank dna', 'Prank unguided')) 
-}
-
 get_sequences <- function(dir) {
     c(beast=beast.sequence(dir),
       pcodon=prank.sequence(dir,'codon'),
@@ -375,3 +314,64 @@ lines_by_method <- function(tmp) {
 
 
 
+
+facet_labeller <- function(variable,value) {
+    switch(variable,
+           indel=ifelse(value, "With indels", "Without indels"),
+           as.character(value))
+}
+
+scatterplot <- function(tmp) {
+    tmp %>% gather(method, dist, starts_with("dist.")) %>%
+        mutate(method=sub('dist.','',method)) %>%
+        mutate(method=factor(method)) %>%
+        filter(as.integer(as.character(wpi)) < 5000) %>%
+        ggplot(aes(x=wpi, y=dist, group=method, color=method)) +
+        facet_grid(indel ~ fitness, labeller=facet_labeller) +
+        geom_point(position = position_jitter(w = 0.1)) +
+        scale_color_discrete(name="Method",
+                            breaks=c("beast", "consensus", 'pcodon', 'pdna', 'unguided'),
+                            labels=c("Beast", "Consensus", 'Prank codon', 'Prank dna', 'Prank unguided')) 
+        # geom_smooth(method="lm", fill=NA) 
+}
+
+
+
+boxplot <- function(tmp) {
+    tmp %>% gather(method, dist, starts_with("dist.")) %>%
+        mutate(method=sub('dist.','',method)) %>%
+        mutate(method=factor(method)) %>%
+        filter(as.integer(as.character(wpi)) < 20000) %>%
+        mutate(wpi=factor(wpi)) %>%
+        #filter(indel) %>%
+        ggplot(aes(x=wpi, y=dist, fill=method)) +
+        facet_grid(indel ~ fitness, labeller=facet_labeller) +
+        theme(axis.text.x = element_text(size = 8, colour = "red", angle = 45)) +
+        geom_boxplot() +
+        xlab("Generations") +
+        ylab("N-W Pairwise Distance") +
+
+        scale_fill_discrete(name="Method",
+                            breaks=c("beast", "consensus", 'pcodon', 'pdna', 'unguided', 'relaxed', 'strict'),
+                            labels=c("Beast", "Consensus", 'Prank codon', 'Prank dna', 'Prank unguided', 'Beast relaxed', 'Beast strict')) 
+}
+
+
+
+barplot <- function(tmp) {
+    tmp %>% gather(method, dist, starts_with("dist.")) %>%
+        mutate(method=sub('dist.','',method)) %>%
+        mutate(method=factor(method)) %>%
+        filter(as.integer(as.character(wpi)) < 20000) %>%
+        mutate(wpi=factor(wpi)) %>%
+        #filter(indel) %>%
+        ggplot(aes(x=factor(wpi), y=dist, fill=method)) +
+        facet_grid(indel ~ fitness, labeller=facet_labeller) +
+        geom_bar(stat="identity", position=position_dodge()) +
+        geom_text(aes(y=dist, ymax=dist, label=method), position= position_dodge(width=0.9), vjust=-.5, color="black") +
+        scale_y_continuous("Distance") +
+        scale_x_discrete("Generations") +
+        scale_fill_discrete(name="Method",
+                            breaks=c("beast", "consensus", 'pcodon', 'pdna', 'unguided'),
+                            labels=c("Beast", "Consensus", 'Prank codon', 'Prank dna', 'Prank unguided')) 
+}
