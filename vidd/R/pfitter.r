@@ -314,11 +314,12 @@ add.consensus <- function ( in.fasta, label='sample' ) {
 # Written by Paul Edlefsen.  Adapted for use within R by cswarth@gmail.com
 #
 # typical usage,
-#     d <- prep.distances(path)
-#     r <- pfitter(basename(file_path_sans_ext(path)), d$distances, 2.16e-05, d$seq.length)
+#     seq <- read.dna(path, format = "fasta")
+#     d <- prep.distances(seq)
+#     r <- pfitter(d$distances, 2.16e-05, d$seq.length)
 
-prep.distances <- function ( fasta.file, include.gaps.in.Hamming=FALSE ) {
-    in.fasta <- read.dna( fasta.file, format = "fasta" );
+prep.distances <- function ( in.fasta, include.gaps.in.Hamming=FALSE ) {
+    stopifnot(inherits(in.fasta, 'DNAbin'))
     
     # Add the consensus.
     .consensus.mat <- matrix( seqinr::consensus( as.character( in.fasta ) ), nrow = 1 );

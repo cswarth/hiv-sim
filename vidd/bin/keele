@@ -8,7 +8,7 @@
 
 suppressPackageStartupMessages(library("optparse"))
 
-search.source <- function(file, path=c('.', '~/src/matsen/hiv-sim/vidd/R'), ...) 
+search.source <- function(file, path=c('.', '../R', '~/src/matsen/hiv-sim/vidd/R'), ...) 
 { 
     for (p in path) { 
         fp <- file.path(p, file) 
@@ -16,6 +16,20 @@ search.source <- function(file, path=c('.', '~/src/matsen/hiv-sim/vidd/R'), ...)
    } 
    stop("file ", sQuote(file), " not found") 
 } 
+
+# parse dates in the sequence id and extract just tose sequences from the earliest date.
+select.early <- function(sequences) {
+    date <- rownames(sequences) %>%
+        strsplit('|', fixed=TRUE) %>%
+        rapply(function(x) tail(x, 1)) %>%
+        as.Date()
+
+    early <- date %>% unique() %>% sort() %>% head(1)
+    sequences[date==early,]
+
+}
+
+
 
 
 search.source('utils.r')
@@ -28,7 +42,7 @@ parser <- OptionParser(usage='keele [options] <fastafile>') %>%
                help="Include site with gaps in distace measure [default %default].  This effectively adds in a new distance matrix calculated with 'indel' model in dist.dna().",
                dest="include.gaps")
 
-#print(parse_args(parser, args = c("-v", 'samples/RV217_PDA_LH_Other.fa'), positional_arguments = TRUE))
+# a <- parse_args(parser, args = c("-v", 'samples/RV217_PDA_LH_Other.fa'), positional_arguments = TRUE)
 
 a <- parse_args(parser, positional_arguments = TRUE)
 file <- a$args
@@ -43,8 +57,12 @@ if (length(file) == 0) {
 if (file.access(file) == -1)
     stop(sprintf("Cannot open FASTA input file '%s'", file))
 
-d <- prep.distances(file, include.gaps.in.Hamming=opt$include.gaps )
+d <- read.dna( file, format = "fasta" ) %>%
+    select.early() %>%
+    prep.distances(include.gaps.in.Hamming=opt$include.gaps )
+
 r <- pfitter(d$distances, opt$rate, d$seq.length)
+
 cat(sprintf('goodness.of.fit.pvalue = %e\t', r$goodness.pval))
 
 if ( r$goodness.pval < 0.05 ) {
