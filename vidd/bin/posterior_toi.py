@@ -102,14 +102,26 @@ def main(args=sys.argv[1:]):
     n = len(rootHeight)
     burnin = int(n*(a.burnin / 100.0))
     toi = tbl['treeModel.rootHeight'][burnin:].mean()
+    std = tbl['treeModel.rootHeight'][burnin:].std()
 
-
+    # find the latest testing date in this sample
+    # time of infection will be calculated backwards from this date.
+    #
     patients = dict([processFasta(datafile) for datafile in a.fasta])
     samples = [sample for p in patients.values() for sample in p.values()]
     dates = [s['date'] for s in samples]
     latest_timepoint = max(dates)
+
+    # calculate a 95% credible intervale (+- 1.96 stddev),
+    # assuming treeheights are normally distributed.
     doi = latest_timepoint - timedelta(days=365.0*toi)
-    print('Estimated date of infection: {}'.format(datetime.strftime(doi, '%Y/%m/%d')))
+    doi_early = latest_timepoint - timedelta(days=365.0*(toi + 1.96*std))
+    doi_late = latest_timepoint - timedelta(days=365.0*(toi - 1.96*std))
+    
+    print('Estimated date of infection: {}  (95% credible interval [{} - {}])'.format(
+        datetime.strftime(doi, '%Y/%m/%d'),
+        datetime.strftime(doi_early, '%Y/%m/%d'),
+        datetime.strftime(doi_late, '%Y/%m/%d')))
     #print(tbl)
 
 
