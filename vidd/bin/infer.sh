@@ -87,9 +87,19 @@ do
 	echocmd "prank -d=${outdir}/left.fasta -o=${outdir}/left -quiet -once -f=fasta -showanc -showtree -showevents -DNA >${outdir}/prankcmd.log 2>&1"
 	echocmd "prank -d=${outdir}/right.fasta -o=${outdir}/right -quiet -once -f=fasta -showanc -showtree -showevents -DNA >${outdir}/prankcmd.log 2>&1"
 
+	founder1=$(prankroot.py ${outdir}/left.best.anc.dnd ${outdir}/left.best.anc.fas)
+	founder2=$(prankroot.py ${outdir}/right.best.anc.dnd ${outdir}/right.best.anc.fas)
+	# if [[ "${founder1}" == "${founder2}" ]]
+	# then
+	#     echo "Founders are identical"
+	# else
+	#     echo "Founders are different"
+	# fi
 	echo ">" ${label}_founder_1
-	echocmd "prankroot.py ${outdir}/left.best.anc.dnd ${outdir}/left.best.anc.fas"
+	echo ${founder1}
 	echo ">" ${label}_founder_2
+	echo ${founder2}
+
 	echocmd "prankroot.py ${outdir}/right.best.anc.dnd ${outdir}/right.best.anc.fas"
 	
     else
