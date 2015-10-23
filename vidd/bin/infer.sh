@@ -100,8 +100,6 @@ do
 	echo ">" ${label}_founder_2
 	echo ${founder2}
 
-	echocmd "prankroot.py ${outdir}/right.best.anc.dnd ${outdir}/right.best.anc.fas"
-	
     else
 	# single founder - process all sequences together
 	# extract sequences at root of guide tree and output in FASTA format.
