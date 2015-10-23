@@ -78,8 +78,8 @@ do
     echocmd "prank -d=${sample} -o=${outdir}/prank -quiet -once -f=fasta -showanc -showtree -showevents -DNA >${outdir}/prankcmd.log 2>&1"
 
     echotty "Testing for multiple founders..."
-    echocmd "keele ${sample}"
-    if [ $? -ne 0 ]         # Test exit status of "keele" command.
+    moi=$(keele ${sample})
+    if [[ "${moi}" == *"multiple infection"* ]]
     then
 	# multiple founders
 	# split just below the root and sequences separately.

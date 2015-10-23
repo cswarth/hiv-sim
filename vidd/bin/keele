@@ -50,9 +50,8 @@ cat(sprintf('goodness.of.fit.pvalue = %e\t', r$goodness.pval))
 if ( r$goodness.pval < 0.05 ) {
     # null hypothesis unlikely; inconsistent with single infection
     cat("cannot rule out multiple infection\n")
-    quit("no", status=1)
 } else {
     # cannot rule out null hypothesis; consistent w/ single infection.
     cat("consistent with single infection.\n")
-    quit("no", status=0)
 }
+quit("no", status=0)
