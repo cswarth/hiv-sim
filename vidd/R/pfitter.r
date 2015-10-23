@@ -1,8 +1,41 @@
+
+# poisson fitter derived from code downloaded from LANL by Paul Edlefsen.
+
+
+# Paul Edlefsen downloaded this on Oct 4, 2015 from
+# "http://www.hiv.lanl.gov/tmp/POISSON_FITTER/pp429jC8Td/PFitter.R".
+# (followed link 'Download R Script' from PoissonFitter results page
+# http://www.hiv.lanl.gov/cgi-bin/POISSON_FITTER/v2/pfitter.cgi)
+
+#########################################################################
+##########       PURPOSE: fit Poisson, calculate lambdas,      ##########
+##########    U-stat standard deviation, and goodness of fit   ##########
+##########      written by EEG, last modified on 5/26/15       ##########
+##########          send questions to egiorgi@lanl.gov         ##########
+
+# INPUT: 
+#  pairwise hamming distances file, mutation rate, length of a sequence
+#  distances file: tab-delimited 3-column file. seqname1(1st col), 
+#                  seqname2(2nd) and distance between seq1 and seq2(3rd).
+#                  based on large-scale formatted sequnce input, which 
+#                  means every unique sequence is represented only once 
+#                  and a seqname should end with _nnn wher nnn is the 
+#                  the multiplicity of such sequence in the alignment.
+
+#  example:  R CMD BATCH '--vanilla --args sample.dist  2.16e-05 2517' this_script 
+
+# OUTPUT:
+#  2 files, one with lambdas, maxhd, jackknife standard deviation 
+#  and estimated days, goodness of fit p-values, and the other with the 
+#  star-phylogeny estimated an dobserved numbers (if they coincide, you have a star)
+#########################################################################
+
+
 library(tools)
 library(assertthat)
 
 
-pfitter <- function(sample, dlist, epsilon, nbases) {
+pfitter <- function(dlist, epsilon, nbases) {
     # sample is a character string label used to label plot and output files.
 
     # where output files willbe placed
@@ -243,8 +276,7 @@ pfitter <- function(sample, dlist, epsilon, nbases) {
         aplambda <- 0
     }
 
-    return(list(sample=sample,
-                lambda=lambda,
+    return(list(lambda=lambda,
                 stdev=newvarhd,
                 nseq=nseq,
                 nbases=nbases,
@@ -258,7 +290,29 @@ pfitter <- function(sample, dlist, epsilon, nbases) {
 }
 
 
-# calculate Hamming distances and prepare a dataframe for pfitter
+# add a consensus sequence.
+# Useful for formatting a fasta file in a form acceptable
+# to the PFitter tool at http://www.hiv.lanl.gov/content/sequence/POISSON_FITTER/pfitter.html
+#
+# Typical usage:
+# 	read.dna( fasta.file, format = "fasta" ) %>%
+#     	    add.consensus( label=basename(file_path_sans_ext(fasta.file))) %>%
+#     	    write.dna('output2.fa', format = "fasta", nbcol=-1, colsep = "",indent = 0,blocksep = 0)
+#
+add.consensus <- function ( in.fasta, label='sample' ) {
+    # in.fasta <- read.dna( fasta.file, format = "fasta" );
+    
+    # Add the consensus.
+    .consensus.mat <- matrix( seqinr::consensus( as.character( in.fasta ) ), nrow = 1 );
+    consensus <- as.DNAbin( .consensus.mat );
+    rownames( consensus ) <- paste0( label, ".CONSENSUS" );
+    
+    rbind( consensus, in.fasta );
+}
+
+# calculate Hamming distances and prepare a dataframe for pfitter.
+# Written by Paul Edlefsen.  Adapted for use within R by cswarth@gmail.com
+#
 # typical usage,
 #     d <- prep.distances(path)
 #     r <- pfitter(basename(file_path_sans_ext(path)), d$distances, 2.16e-05, d$seq.length)
@@ -269,7 +323,7 @@ prep.distances <- function ( fasta.file, include.gaps.in.Hamming=FALSE ) {
     # Add the consensus.
     .consensus.mat <- matrix( seqinr::consensus( as.character( in.fasta ) ), nrow = 1 );
     consensus <- as.DNAbin( .consensus.mat );
-    rownames( consensus ) <- paste( "Consensus" );
+    rownames( consensus ) <- paste( "CONSENSUS" );
     
     fasta.with.consensus <- rbind( consensus, in.fasta );
     

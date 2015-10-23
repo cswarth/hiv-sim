@@ -1,23 +1,28 @@
 #!/usr/bin/env python
 '''
-Extracts and prints  ancestral sequence at the root of the phylogenetc tree inferred by PRANK.
+Split the Prank trees at the root 
 
-usage:
-	$ ./prankroot.py prank.best.anc.dnd prank.best.anc.fas 
+     usage: ./treesplit.py output/prank.best.anc.dnd samples/RV217_PDC_gp120_1M_aln.fa
+     writing left.fasta
+     RV217_PDC|1M|08WG|NFLG|2012/02/12
+     writing right.fasta
+     RV217_PDC|1M|10WG|NFLG|2012/02/12 RV217_PDC|1M|11WG|NFLG|2012/02/12 RV217_PDC|1M|09WG|NFLG|2012/02/12 RV217_PDC|1M|07WG|NFLG|2012/02/12 RV217_PDC|1M|06WG|NFLG|2012/02/12 RV217_PDC|1M|05WG|NFLG|2012/02/12 RV217_PDC|1M|04WG|NFLG|2012/02/12 RV217_PDC|1M|01WG|NFLG|2012/02/12 RV217_PDC|1M|02WG|NFLG|2012/02/12 RV217_PDC|1M|03WG|NFLG|2012/02/12
+
 '''
 from __future__ import print_function
 import sys
+import os.path
 import argparse
 import logging
 from Bio import SeqIO, Alphabet
-from Bio import Phylo	# for reading Prank trees
+from Bio import Phylo	# for reading Newick trees like those produced by Prank
 
 # logging.basicConfig(stream=sys.stdout)
 log = logging.getLogger(__name__)
 a = None # reserved for arguments
 
 
-def prank_root_sequences(treefile, fastafile):
+def split_sequences(treefile, fastafile, outdir):
     """
     iterate over Prank founder sequence(s) inferred from CODON model
     See https://github.com/cswarth/hiv-sim/issues/2
@@ -34,13 +39,14 @@ def prank_root_sequences(treefile, fastafile):
     # identify the sequence associated with the root node.
     tree = Phylo.read(treefile, 'newick')
     rootid = str(tree.root)
+
     record_dict = SeqIO.index(fastafile, "fasta")
-    root = None
-    if rootid in record_dict:
-		root = record_dict[rootid]
-    else:
-        raise ValueError("Ooops!  Cannot find node '{}' in sequences file '{}'".format(rootid, fastafile))
-    return root
+    for f,child in zip(['left','right'], tree.root):
+        fname = os.path.join(outdir, f+'.fasta')
+        with open(fname, "w") as fh:
+            sequences = [record_dict[k.name] for k in child.get_terminals()]
+            SeqIO.write(sequences, fh, "fasta")
+
 
 def parse_args():
     ''' returns command-line arguments parsed by argparse.
@@ -61,7 +67,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False)
     parser.add_argument('-d', '--debug', dest='debug', action='store_true', default=False)
-    parser.add_argument('-p', '--processes', default=2)
+    parser.add_argument('-o', '--outdir', default='.')
     parser.add_argument('treefile')
     parser.add_argument('fastafile')
     return parser.parse_args()
@@ -84,7 +90,7 @@ def main():
     logging.info("Info")
     logging.debug("Debug")
 
-    print(prank_root_sequences(a.treefile, a.fastafile).seq)
+    split_sequences(a.treefile, a.fastafile, a.outdir)
 
 
     

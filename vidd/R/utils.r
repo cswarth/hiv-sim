@@ -9,7 +9,7 @@
 
 # install any missing packages
 # http://stackoverflow.com/a/19873732/1135316
-if (!require("pacman")) install.packages("pacman")
+if (!suppressMessages(require("pacman"))) install.packages("pacman")
 pacman::p_load(ape, dplyr, ggplot2, stringr, Biostrings, readr, tidyr, seqinr, DECIPHER, functional)
 
 # turn off annoying progress bar

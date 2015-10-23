@@ -1,0 +1,58 @@
+#!/usr/bin/env Rscript 
+
+# attempts to determin if sequences in a fasta file are consistent with
+# a single infection or multiple infections.
+#
+#  This script returns a 0 exit code for suspected single infections,
+#  a 1 exit code for multiple infections.
+
+suppressPackageStartupMessages(library("optparse"))
+
+search.source <- function(file, path=c('.', '~/src/matsen/hiv-sim/vidd/R'), ...) 
+{ 
+    for (p in path) { 
+        fp <- file.path(p, file) 
+        if (file.exists(fp)) return(source(fp, ...)) 
+   } 
+   stop("file ", sQuote(file), " not found") 
+} 
+
+
+search.source('utils.r')
+search.source('pfitter.r')
+
+parser <- OptionParser(usage='keele [options] <fastafile>') %>%
+    add_option(c("-r", "--rate"), type='double', default=2.16e-05, dest="rate",
+               help="Mutation rate [default %default, based on Mansky and Temin 1995 (J Virol 69:5087-5094)]") %>%
+    add_option(c("-g", "--include-gaps"),  action="store_true", default=FALSE,
+               help="Include site with gaps in distace measure [default %default].  This effectively adds in a new distance matrix calculated with 'indel' model in dist.dna().",
+               dest="include.gaps")
+
+#print(parse_args(parser, args = c("-v", 'samples/RV217_PDA_LH_Other.fa'), positional_arguments = TRUE))
+
+a <- parse_args(parser, positional_arguments = TRUE)
+file <- a$args
+opt <- a$options
+
+
+if (length(file) == 0) {
+    print_help(parser)
+    stop('Missing FASTA file argument.')
+}
+
+if (file.access(file) == -1)
+    stop(sprintf("Cannot open FASTA input file '%s'", file))
+
+d <- prep.distances(file, include.gaps.in.Hamming=opt$include.gaps )
+r <- pfitter(d$distances, opt$rate, d$seq.length)
+cat(sprintf('goodness.of.fit.pvalue = %e\t', r$goodness.pval))
+
+if ( r$goodness.pval < 0.05 ) {
+    # null hypothesis unlikely; inconsistent with single infection
+    cat("cannot rule out multiple infection\n")
+    quit("no", status=1)
+} else {
+    # cannot rule out null hypothesis; consistent w/ single infection.
+    cat("consistent with single infection.\n")
+    quit("no", status=0)
+}
