@@ -130,17 +130,6 @@ def build_parser():
     """
     Build the command-line argument parser.
     """
-    def commaSplitter(str):
-        """
-        Argparse a comm-seperated list
-        """
-        # leave this here as a reminder of what I should do to make the argument parsing more robust
-
-        # if sqrt != int(sqrt):
-        #      msg = "%r is not a perfect square" % string
-        #      raise argparse.ArgumentTypeError(msg)
-        # return value
-        return str.split(',')
 
     def existing_file(fname):
         """
