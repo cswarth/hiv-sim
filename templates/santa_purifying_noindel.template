@@ -15,7 +15,7 @@
 	  <feature>
 	    <name>C2C3</name>
 	    <type>aminoAcid</type>
-	    <coordinates>1-207</coordinates>
+	    <coordinates>1-468</coordinates>
 	  </feature>
 
 		</genome>
@@ -28,7 +28,7 @@
 		<fitnessFunction>
 		  <purifyingFitness>
 		    <feature>C2C3</feature>
-		    <sites>1-69</sites>
+		    <sites>1-156</sites>
 		    <rank>
 		      <order>chemical</order>
 		      <breakTies>random</breakTies>
